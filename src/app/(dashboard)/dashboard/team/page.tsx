@@ -1,0 +1,245 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { format } from "date-fns";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2, Plus, Trash2, Shield, User as UserIcon } from "lucide-react";
+import { toast } from "sonner";
+
+export default function TeamPage() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [formData, setFormData] = useState({ name: "", email: "", password: "" });
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("/api/team");
+      if (!res.ok) throw new Error("Failed to fetch team members");
+      const data = await res.json();
+      setUsers(data.data || []);
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not load team members");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const handleAddEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAdding(true);
+    try {
+      const res = await fetch("/api/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to add employee");
+      }
+      
+      toast.success("Employee account created successfully");
+      setIsAddOpen(false);
+      setFormData({ name: "", email: "", password: "" });
+      fetchUsers();
+    } catch (error: any) {
+      toast.error(error.message || "An error occurred");
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleDeleteEmployee = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to remove ${name}? They will lose access immediately.`)) return;
+    
+    try {
+      const res = await fetch(`/api/team/${id}`, {
+        method: "DELETE",
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete employee");
+      }
+      
+      toast.success("Employee removed successfully");
+      setUsers(users.filter(u => u.id !== id));
+    } catch (error: any) {
+      toast.error(error.message || "An error occurred");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6 pb-10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Team Management</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage who has access to view this dashboard.
+          </p>
+        </div>
+        
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger 
+            render={
+              <Button className="gap-2">
+                <Plus className="size-4" />
+                Add Employee
+              </Button>
+            }
+          />
+          <DialogContent className="sm:max-w-[425px]">
+            <form onSubmit={handleAddEmployee}>
+              <DialogHeader>
+                <DialogTitle>Add New Employee</DialogTitle>
+                <DialogDescription>
+                  Create an account for a team member to access the dashboard.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input 
+                    id="name" 
+                    placeholder="John Doe" 
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input 
+                    id="email" 
+                    type="email" 
+                    placeholder="john@example.com" 
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input 
+                    id="password" 
+                    type="password" 
+                    placeholder="••••••••" 
+                    value={formData.password}
+                    onChange={(e) => setFormData({...formData, password: e.target.value})}
+                    required
+                    minLength={6}
+                  />
+                  <p className="text-xs text-muted-foreground">Password must be at least 6 characters long.</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isAdding}>
+                  {isAdding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Create Account
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden">
+        <Table>
+          <TableHeader className="bg-muted/50">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="font-semibold text-foreground">Name</TableHead>
+              <TableHead className="font-semibold text-foreground">Email</TableHead>
+              <TableHead className="font-semibold text-foreground">Role</TableHead>
+              <TableHead className="font-semibold text-foreground">Added On</TableHead>
+              <TableHead className="text-right font-semibold text-foreground">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-[150px]" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-[180px]" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-[80px] rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-[100px]" /></TableCell>
+                  <TableCell><Skeleton className="h-8 w-8 ml-auto rounded-md" /></TableCell>
+                </TableRow>
+              ))
+            ) : users.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center h-32 text-muted-foreground">
+                  No team members found. Add an employee to get started.
+                </TableCell>
+              </TableRow>
+            ) : (
+              users.map((user) => (
+                <TableRow key={user.id} className="hover:bg-muted/50 transition-colors">
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-3">
+                      <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                        {user.name?.[0]?.toUpperCase() || "?"}
+                      </div>
+                      {user.name || "N/A"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {user.email}
+                  </TableCell>
+                  <TableCell>
+                    {user.role === "ORG_USER" ? (
+                      <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 gap-1.5 font-normal">
+                        <UserIcon className="size-3" />
+                        Employee
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100/80 border-none gap-1.5 font-normal">
+                        <Shield className="size-3" />
+                        Admin
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {format(new Date(user.createdAt), "MMM dd, yyyy")}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {user.role === "ORG_USER" && (
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDeleteEmployee(user.id, user.name)}
+                        title="Remove Employee"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
