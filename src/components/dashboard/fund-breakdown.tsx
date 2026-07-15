@@ -40,15 +40,15 @@ export function FundBreakdown({ data, isLoading }: FundBreakdownProps) {
                 ))
               ) : data && data.length > 0 ? (
                 data.map((fund) => (
-                  <TableRow key={fund.fundId} className="hover:bg-muted/20">
+                  <TableRow key={fund.fundName} className="hover:bg-muted/20">
                     <TableCell className="font-medium text-sm text-foreground/90 max-w-[200px] truncate" title={fund.fundName}>
                       {fund.fundName}
                     </TableCell>
                     <TableCell className="text-right font-semibold text-blue-600 text-sm">
-                      {formatNumber(fund.totalRaised, true)}
+                      {formatNumber(fund.amountRaised, true)}
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground text-xs">
-                      {formatNumber(fund.donorCount, false)}
+                      {formatNumber(fund.donorsCount, false)}
                     </TableCell>
                   </TableRow>
                 ))
