@@ -22,10 +22,10 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
   const isAuthenticated = !!session?.user;
   const role = session?.user?.role;
 
-  // ── Cron routes: authenticated by secret header only ──────────────────────
+  // ── Cron routes: authenticated by Vercel cron secret ──────────────────────
   if (pathname.startsWith("/api/cron")) {
-    const cronSecret = req.headers.get("x-cron-secret");
-    if (cronSecret !== process.env.CRON_SECRET) {
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     return NextResponse.next();
@@ -33,6 +33,11 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
 
   // ── NextAuth internal routes: always allow ────────────────────────────────
   if (pathname.startsWith("/api/auth")) {
+    return NextResponse.next();
+  }
+
+  // ── Webhook routes: authenticated by signature ────────────────────────────
+  if (pathname.startsWith("/api/webhooks")) {
     return NextResponse.next();
   }
 
