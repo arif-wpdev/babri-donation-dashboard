@@ -41,15 +41,12 @@ export async function GET(request: NextRequest) {
     // Date range parsing
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
+    const tzParam = searchParams.get("tz") || "Asia/Dhaka";
     let fromDate: Date | undefined;
     let toDate: Date | undefined;
 
     if (fromParam) fromDate = new Date(fromParam);
-    if (toParam) {
-      toDate = new Date(toParam);
-      // Ensure toDate includes the end of the day
-      toDate.setHours(23, 59, 59, 999);
-    }
+    if (toParam) toDate = new Date(toParam);
 
     const rangeWhere = fromDate || toDate ? {
       wcDatePaid: {
@@ -157,12 +154,15 @@ export async function GET(request: NextRequest) {
       orderBy: { wcDatePaid: "asc" },
     });
 
+    const dateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, month: "short", day: "numeric" });
+    const monthFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, month: "short", year: "numeric" });
+
     const trendMap = new Map<string, number>();
     trendDonations.forEach((d) => {
       if (!d.wcDatePaid) return;
       const key = isDayGrouping 
-        ? format(d.wcDatePaid, "MMM dd") // e.g. "Jul 15"
-        : format(d.wcDatePaid, "MMM yyyy"); // e.g. "Jul 2026"
+        ? dateFormatter.format(d.wcDatePaid) // e.g. "Jul 15"
+        : monthFormatter.format(d.wcDatePaid); // e.g. "Jul 2026"
       
       const current = trendMap.get(key) || 0;
       trendMap.set(key, current + Number(d.total));

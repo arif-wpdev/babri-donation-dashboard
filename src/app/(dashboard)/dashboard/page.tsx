@@ -43,8 +43,19 @@ export default function DashboardPage() {
         return { from: startOfMonth(today), to: today };
       case "thisYear":
         return { from: startOfYear(today), to: today };
-      case "custom":
-        return customRange || null;
+      case "custom": {
+        if (!customRange) return null;
+        const from = customRange.from ? new Date(customRange.from) : undefined;
+        let to = customRange.to ? new Date(customRange.to) : undefined;
+        if (to) {
+          to.setHours(23, 59, 59, 999);
+        } else if (from) {
+          // If only 'from' is selected, make 'to' the end of that single day
+          to = new Date(from);
+          to.setHours(23, 59, 59, 999);
+        }
+        return { from, to };
+      }
       case "all":
       default:
         return null;

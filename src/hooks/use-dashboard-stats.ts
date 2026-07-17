@@ -23,6 +23,11 @@ export function useDashboardStats(dateRange?: DateRange | null) {
       const params = new URLSearchParams();
       if (dateRange?.from) params.append("from", dateRange.from.toISOString());
       if (dateRange?.to) params.append("to", dateRange.to.toISOString());
+      try {
+        params.append("tz", Intl.DateTimeFormat().resolvedOptions().timeZone);
+      } catch (e) {
+        params.append("tz", "Asia/Dhaka");
+      }
 
       const res = await fetch(`/api/dashboard/stats?${params.toString()}`);
       if (!res.ok) {
