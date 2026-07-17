@@ -16,13 +16,13 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | Donation Insight",
-    default: "Donation Insight",
+    template: "%s | TDF Donation Dashboard",
+    default: "TDF Donation Dashboard",
   },
   description:
     "Multi-tenant donation analytics platform. Track funds, donors, and donations from WooCommerce in real time.",
   keywords: ["donations", "nonprofit", "WooCommerce", "analytics", "fundraising"],
-  authors: [{ name: "Donation Insight" }],
+  authors: [{ name: "TDF Donation Dashboard" }],
   robots: { index: false, follow: false }, // Private SaaS — no indexing
 };
 
