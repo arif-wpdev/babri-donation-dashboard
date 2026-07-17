@@ -24,10 +24,17 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
     title = "TDF Donation Dashboard";
   } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "donors" && pathSegments.length === 3) {
     title = "Donor Profile";
+  } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "funds" && pathSegments.length === 3) {
+    title = "Fund Details";
   }
   
-  const displayTitle = title === "TDF Donation Dashboard" ? title : (title.charAt(0).toUpperCase() + title.slice(1));
+  let displayTitle = title === "TDF Donation Dashboard" ? title : (title.charAt(0).toUpperCase() + title.slice(1));
 
+  if (title === "funds") displayTitle = "Funds Overview";
+  else if (title === "donors") displayTitle = "Donor Directory";
+  else if (title === "donations") displayTitle = "Transactions";
+  else if (title === "reports") displayTitle = "UTM Analytics";
+  else if (title === "team") displayTitle = "Team Management";
   // Format today's date
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -38,12 +45,18 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
 
   return (
     <header className="flex h-20 shrink-0 items-center justify-between gap-2 px-6 lg:px-8 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex items-center gap-4">
-        <SidebarTrigger className="-ml-1 text-muted-foreground hover:text-foreground transition-colors" />
-        <Separator orientation="vertical" className="mr-2 h-6 bg-border/60" />
-        <div className="flex flex-col">
-          <h1 className="text-xl font-bold tracking-tight">{displayTitle}</h1>
-          <p className="text-sm text-muted-foreground">{today}</p>
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <SidebarTrigger className="-ml-1 text-muted-foreground hover:text-foreground transition-colors hidden md:block" />
+        <Separator orientation="vertical" className="h-6 bg-border/60 hidden md:block" />
+        
+        {/* Mobile Logo */}
+        <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 md:hidden overflow-hidden">
+          <img src="/logo.png" alt="TDF Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-sm font-bold font-serif italic text-primary">TDF</span>'; }} />
+        </div>
+
+        <div className="flex flex-col min-w-0">
+          <h1 className="text-base md:text-xl font-bold tracking-tight truncate leading-tight">{displayTitle}</h1>
+          <p className="text-xs md:text-sm text-muted-foreground truncate">{today}</p>
         </div>
       </div>
       

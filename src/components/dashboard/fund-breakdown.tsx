@@ -44,7 +44,7 @@ export function FundBreakdown({ data, isLoading }: FundBreakdownProps) {
                     <TableCell className="font-medium text-sm text-foreground/90 max-w-[200px] truncate" title={fund.fundName}>
                       {fund.fundName}
                     </TableCell>
-                    <TableCell className="text-right font-semibold text-blue-600 text-sm">
+                    <TableCell className="text-right font-semibold text-primary text-sm">
                       {formatNumber(fund.amountRaised, true)}
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground text-xs">

@@ -49,14 +49,7 @@ export default function TransactionsPage() {
 
   return (
     <div className="flex flex-col gap-6 pb-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Transactions</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            View all donations and filter by fund, source, or campaign.
-          </p>
-        </div>
-      </div>
+
 
       <Card className="border-none shadow-sm rounded-2xl bg-white">
         <CardHeader className="pb-4 flex flex-col gap-4">
@@ -76,7 +69,7 @@ export default function TransactionsPage() {
                 />
               </div>
 
-              <Select value={fundFilter} onValueChange={setFundFilter} disabled={isLoadingFunds}>
+              <Select value={fundFilter} onValueChange={(val) => setFundFilter(val || "All")} disabled={isLoadingFunds}>
                 <SelectTrigger className="w-full sm:w-[160px] bg-muted/50 border-none rounded-xl h-9">
                   <SelectValue placeholder="All Funds" />
                 </SelectTrigger>
@@ -88,7 +81,7 @@ export default function TransactionsPage() {
                 </SelectContent>
               </Select>
 
-              <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <Select value={sourceFilter} onValueChange={(val) => setSourceFilter(val || "All")}>
                 <SelectTrigger className="w-full sm:w-[140px] bg-muted/50 border-none rounded-xl h-9">
                   <SelectValue placeholder="All Sources" />
                 </SelectTrigger>
@@ -100,7 +93,7 @@ export default function TransactionsPage() {
                 </SelectContent>
               </Select>
 
-              <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+              <Select value={campaignFilter} onValueChange={(val) => setCampaignFilter(val || "All")}>
                 <SelectTrigger className="w-full sm:w-[140px] bg-muted/50 border-none rounded-xl h-9">
                   <SelectValue placeholder="All Campaigns" />
                 </SelectTrigger>

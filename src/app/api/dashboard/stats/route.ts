@@ -213,11 +213,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const fundBreakdown = Array.from(fundMap.values()).map(f => ({
-      fundName: f.name,
-      amountRaised: f.amount,
-      donorsCount: f.uniqueDonors.size
-    })).sort((a, b) => b.amountRaised - a.amountRaised);
+    const fundBreakdown = Array.from(fundMap.values())
+      .filter(f => f.name !== "Quiz Registration")
+      .map(f => ({
+        fundName: f.name,
+        amountRaised: f.amount,
+        donorsCount: f.uniqueDonors.size
+      })).sort((a, b) => b.amountRaised - a.amountRaised);
 
     return NextResponse.json({
       kpis: {

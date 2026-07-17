@@ -18,7 +18,7 @@ export function DistributionChart() {
   }
 
   // Filter out funds with 0 raised for the pie chart
-  const pieData = data.topFunds.filter((f) => f.value > 0);
+  const pieData = data.fundBreakdown.filter((f: any) => f.amountRaised > 0).map((f: any) => ({ name: f.fundName, value: f.amountRaised }));
 
   if (pieData.length === 0) {
     return (
@@ -43,12 +43,12 @@ export function DistributionChart() {
               dataKey="value"
               stroke="none"
             >
-              {pieData.map((entry, index) => (
+              {pieData.map((entry: any, index: number) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
             <Tooltip 
-              formatter={(value: number) => [`৳${value.toLocaleString()}`, "Raised"]}
+              formatter={(value: any) => [`৳${Number(value).toLocaleString()}`, "Raised"]}
               contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
             />
           </PieChart>
@@ -56,7 +56,7 @@ export function DistributionChart() {
       </div>
       
       <div className="mt-4 flex flex-col gap-2 relative z-10">
-        {pieData.map((entry, index) => (
+        {pieData.map((entry: any, index: number) => (
           <div key={index} className="flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground truncate max-w-[120px]">{entry.name}</span>
             <div className="flex items-center gap-2">
@@ -65,7 +65,7 @@ export function DistributionChart() {
                 className="text-xs font-medium text-white px-2 py-0.5 rounded-full"
                 style={{ backgroundColor: COLORS[index % COLORS.length] }}
               >
-                {((entry.value / pieData.reduce((acc, curr) => acc + curr.value, 0)) * 100).toFixed(1)}%
+                {((entry.value / pieData.reduce((acc: number, curr: any) => acc + curr.value, 0)) * 100).toFixed(1)}%
               </span>
             </div>
           </div>

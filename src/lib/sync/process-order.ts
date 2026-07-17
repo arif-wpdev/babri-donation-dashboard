@@ -68,11 +68,29 @@ const STATUS_MAP: Record<string, DonationStatus> = {
  * Processes a single WooCommerce order (sync/webhook) and creates/updates Donor & Donation.
  */
 export async function processWooCommerceOrder(order: WCOrder, orgId: string): Promise<"added" | "updated" | "ignored"> {
-  // If not processing or completed, we might still want to track it, but the instruction was to only track processing as COMPLETED.
-  // For webhooks, we'll map the exact status unless otherwise specified.
+  const isValidStatus = ["processing", "completed"].includes(order.status.toLowerCase());
+
+  if (!isValidStatus) {
+    const existing = await prisma.donation.findUnique({
+      where: { orgId_wcOrderId: { orgId, wcOrderId: order.id } },
+      select: { id: true, donorId: true },
+    });
+    
+    if (existing) {
+      await prisma.donation.delete({
+        where: { id: existing.id }
+      });
+      if (existing.donorId) {
+        await recalculateDonorStats(orgId, existing.donorId);
+      }
+      return "updated"; // Count as updated for sync logs
+    }
+    
+    return "ignored";
+  }
+
   let donationStatus: DonationStatus = STATUS_MAP[order.status.toLowerCase()] || "PENDING";
   
-  // As per original logic, "processing" orders are treated as "COMPLETED"
   if (order.status.toLowerCase() === "processing") {
     donationStatus = "COMPLETED";
   }
@@ -114,7 +132,7 @@ export async function processWooCommerceOrder(order: WCOrder, orgId: string): Pr
         email: orderEmail,
         phone: orderPhone,
         normalizedPhone: normPhone,
-        billingAddress: order.billing as Prisma.InputJsonValue,
+        billingAddress: order.billing as unknown as Prisma.InputJsonValue,
         isPayingCustomer: true,
         ordersCount: 0, 
         totalSpent: 0,
@@ -153,6 +171,12 @@ export async function processWooCommerceOrder(order: WCOrder, orgId: string): Pr
     }
   }
 
+  const parseWCDate = (gmtDate?: string | null, localDate?: string | null) => {
+    if (gmtDate) return new Date(gmtDate + (gmtDate.endsWith("Z") ? "" : "Z"));
+    if (localDate) return new Date(localDate);
+    return null;
+  };
+
   const donationData: Prisma.DonationUncheckedCreateInput = {
     wcOrderId: order.id,
     orgId,
@@ -171,10 +195,10 @@ export async function processWooCommerceOrder(order: WCOrder, orgId: string): Pr
     customerNote: order.customer_note || null,
     billingSnapshot: order.billing as unknown as Prisma.InputJsonValue,
     lineItems: order.line_items as unknown as Prisma.InputJsonValue,
-    wcDateCreated: order.date_created ? new Date(order.date_created) : null,
-    wcDateModified: order.date_modified ? new Date(order.date_modified) : null,
-    wcDateCompleted: order.date_completed ? new Date(order.date_completed) : null,
-    wcDatePaid: order.date_paid ? new Date(order.date_paid) : null,
+    wcDateCreated: parseWCDate((order as any).date_created_gmt, order.date_created),
+    wcDateModified: parseWCDate((order as any).date_modified_gmt, order.date_modified),
+    wcDateCompleted: parseWCDate((order as any).date_completed_gmt, order.date_completed),
+    wcDatePaid: parseWCDate((order as any).date_paid_gmt, order.date_paid),
     utmSource,
     utmMedium,
     utmCampaign,

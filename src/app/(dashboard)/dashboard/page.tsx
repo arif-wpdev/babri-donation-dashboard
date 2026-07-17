@@ -12,10 +12,10 @@ import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { useDashboardStats } from "@/hooks/use-dashboard-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type FilterPreset = "all" | "today" | "yesterday" | "last7" | "last30" | "thisMonth" | "thisYear" | "custom";
+export type FilterPreset = "all" | "today" | "yesterday" | "last7" | "last30" | "thisMonth" | "thisYear" | "custom";
 
 export default function DashboardPage() {
-  const [filter, setFilter] = useState<FilterPreset>("last30");
+  const [filter, setFilter] = useState<FilterPreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
 
   const dateRange = useMemo<DateRange | null>(() => {
@@ -53,46 +53,42 @@ export default function DashboardPage() {
 
   const { data, isLoading } = useDashboardStats(dateRange);
 
+  const periodLabel = useMemo(() => {
+    switch (filter) {
+      case "today": return "Today";
+      case "yesterday": return "Yesterday";
+      case "last7": return "Last 7 Days";
+      case "last30": return "Last 30 Days";
+      case "thisMonth": return "This Month";
+      case "thisYear": return "This Year";
+      case "custom": return "Custom Range";
+      case "all": return "All Time";
+      default: return "Overview";
+    }
+  }, [filter]);
+
   return (
     <div className="flex flex-col gap-4 lg:gap-6 pb-10">
-      <div className="flex justify-end items-center gap-2 mb-4">
-        {filter === "custom" && (
-          <DateRangePicker
-            date={customRange}
-            setDate={(range) => setCustomRange(range)}
-            className="shadow-sm"
-          />
-        )}
-        <Select value={filter} onValueChange={(val) => setFilter(val as FilterPreset)}>
-          <SelectTrigger className="w-[180px] bg-white/80 backdrop-blur-md rounded-full shadow-sm border-border/60 hover:bg-white transition-colors">
-            <SelectValue placeholder="Select period" />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl">
-              <SelectItem value="all">All Time</SelectItem>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="yesterday">Yesterday</SelectItem>
-              <SelectItem value="last7">Last 7 Days</SelectItem>
-              <SelectItem value="last30">Last 30 Days</SelectItem>
-              <SelectItem value="thisMonth">This Month</SelectItem>
-              <SelectItem value="thisYear">This Year</SelectItem>
-              <SelectItem value="custom">Custom Range...</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      
-      <KpiCards data={data?.kpis} isLoading={isLoading} />
+      <KpiCards 
+        data={data?.kpis} 
+        isLoading={isLoading} 
+        filter={filter}
+        setFilter={setFilter}
+        customRange={customRange}
+        setCustomRange={setCustomRange}
+      />
       
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
         {/* Left Column */}
-        <div className="xl:col-span-2 flex flex-col gap-4 lg:gap-6">
+        <div className="order-2 xl:order-1 xl:col-span-2 flex flex-col gap-4 lg:gap-6">
           <div className="h-[400px]">
-            <TrendChart data={data?.trend} isLoading={isLoading} />
+            <TrendChart data={data?.trend} isLoading={isLoading} periodLabel={periodLabel} />
           </div>
           <RecentDonations />
         </div>
         
         {/* Right Column */}
-        <div className="xl:col-span-1 flex flex-col gap-4 lg:gap-6">
+        <div className="order-1 xl:order-2 xl:col-span-1 flex flex-col gap-4 lg:gap-6">
           <FundBreakdown data={data?.fundBreakdown} isLoading={isLoading} />
         </div>
       </div>

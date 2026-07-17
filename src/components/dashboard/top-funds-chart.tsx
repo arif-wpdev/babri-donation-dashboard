@@ -18,8 +18,8 @@ export function TopFundsChart() {
   }
 
   // Calculate percentages
-  const fundsData = data.topFunds.filter(f => f.value > 0).slice(0, 4);
-  const maxSales = Math.max(...fundsData.map(f => f.value), 1); // Avoid division by zero
+  const fundsData = data.fundBreakdown.filter((f: any) => f.amountRaised > 0).slice(0, 4).map((f: any) => ({ name: f.fundName, value: f.amountRaised }));
+  const maxSales = Math.max(...fundsData.map((f: any) => f.value), 1); // Avoid division by zero
 
   if (fundsData.length === 0) {
     return (
@@ -66,7 +66,7 @@ export function TopFundsChart() {
 
         {/* Right Side: List of Funds with Progress Bars */}
         <div className="flex flex-col gap-4 w-full">
-          {fundsData.map((fund, index) => (
+          {fundsData.map((fund: any, index: number) => (
             <div key={index} className="flex items-center gap-3">
               <span className="text-sm font-bold text-muted-foreground w-4">#{index + 1}</span>
               <div className="flex flex-col gap-1.5 w-full">

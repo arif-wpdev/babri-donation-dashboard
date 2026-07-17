@@ -48,21 +48,7 @@ const navMain = [
       },
     ],
   },
-  {
-    title: "Financial",
-    items: [
-      {
-        title: "Donations",
-        url: "/dashboard/donations",
-        icon: CreditCard,
-      },
-      {
-        title: "Reports",
-        url: "/dashboard/reports",
-        icon: PieChart,
-      },
-    ],
-  },
+
   {
     title: "Tools",
     items: [
@@ -103,13 +89,13 @@ export function AppSidebar({ userRole, ...props }: React.ComponentProps<typeof S
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
         <div className="flex items-center gap-3 px-4 py-4">
-          <div className="flex aspect-square size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <span className="text-xl font-bold font-serif italic">D</span>
+          <div className="flex aspect-square size-10 items-center justify-center overflow-hidden">
+            <img src="/logo.png" alt="TDF Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-xl font-bold font-serif italic text-primary">TDF</span>'; }} />
           </div>
           <div className="flex flex-col gap-0.5 leading-none">
-            <span className="font-semibold text-lg">Insight</span>
+            <span className="font-semibold text-lg">TDF</span>
             <span className="text-xs text-sidebar-foreground/70">
-              Analytics Hub
+              Donation Dashboard
             </span>
           </div>
         </div>

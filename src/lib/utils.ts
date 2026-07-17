@@ -36,12 +36,18 @@ export function normalizePhone(phone: string | null | undefined): string | null 
   return clean || null;
 }
 
-export function formatNumber(value: number, isCurrency = true): string {
-  // Format with standard en-IN formatting for the commas (e.g. 1,52,927.00)
-  const formatted = new Intl.NumberFormat('en-IN', {
-    minimumFractionDigits: isCurrency ? 2 : 0,
-    maximumFractionDigits: isCurrency ? 2 : 0,
-  }).format(value);
+export function formatNumber(value: number, isCurrency = true, compact = false): string {
+  const options: Intl.NumberFormatOptions = {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  };
+
+  if (compact) {
+    options.notation = "compact";
+    options.compactDisplay = "short";
+  }
+
+  const formatted = new Intl.NumberFormat('en-IN', options).format(value);
   
   return isCurrency ? `৳${formatted}` : formatted;
 }

@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { wcDatePaid: "desc" },
+        orderBy: { wcDateCreated: "desc" },
         select: {
           id: true,
           wcOrderId: true,
@@ -118,17 +118,25 @@ export async function GET(request: NextRequest) {
     ]);
 
     // ── Summary stats for the current filter ─────────────────────────────────
-    const summary = await prisma.donation.aggregate({
-      where,
-      _sum: { total: true },
-      _count: { id: true },
-    });
+    const [summary, uniqueDonorsQuery] = await Promise.all([
+      prisma.donation.aggregate({
+        where,
+        _sum: { total: true },
+        _count: { id: true },
+      }),
+      prisma.donation.findMany({
+        where: { ...where, donorId: { not: null } },
+        distinct: ['donorId'],
+        select: { donorId: true }
+      })
+    ]);
 
     return Response.json({
       data: donations,
       summary: {
         totalDonations: summary._count.id,
         totalAmount: summary._sum.total ?? 0,
+        uniqueDonors: uniqueDonorsQuery.length,
       },
       meta: {
         total,

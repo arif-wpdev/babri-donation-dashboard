@@ -31,12 +31,7 @@ export default function ReportsPage() {
   return (
     <div className="flex flex-col gap-6 pb-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">UTM Analytics</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Analyze donation sources and campaign performance.
-          </p>
-        </div>
+
         
         <DateRangePicker 
           date={dateRange} 
@@ -115,7 +110,7 @@ export default function ReportsPage() {
                   </Pie>
                   <RechartsTooltip 
                     contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.05)", fontWeight: 500 }}
-                    formatter={(value: number) => [`৳${value.toLocaleString()}`, "Volume"]}
+                    formatter={(value: any) => [`৳${Number(value).toLocaleString()}`, "Volume"]}
                   />
                 </PieChart>
               </ResponsiveContainer>

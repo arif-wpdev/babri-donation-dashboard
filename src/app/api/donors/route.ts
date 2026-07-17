@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import { paginationSchema } from "@/lib/validations/schemas";
+import { donorFilterSchema } from "@/lib/validations/schemas";
+import type { Prisma } from "@prisma/client";
 
 /**
  * GET /api/donors
@@ -41,10 +42,17 @@ export async function GET(request: NextRequest) {
       orgId = user.orgId;
     }
 
-    const parsed = paginationSchema.safeParse({
+    const parsed = donorFilterSchema.safeParse({
       page: searchParams.get("page") ?? undefined,
       limit: searchParams.get("limit") ?? undefined,
       search: searchParams.get("search") ?? undefined,
+      minAmount: searchParams.get("minAmount") ?? undefined,
+      maxAmount: searchParams.get("maxAmount") ?? undefined,
+      minCount: searchParams.get("minCount") ?? undefined,
+      maxCount: searchParams.get("maxCount") ?? undefined,
+      sortBy: searchParams.get("sortBy") ?? undefined,
+      sortOrder: searchParams.get("sortOrder") ?? undefined,
+      fundId: searchParams.get("fundId") ?? undefined,
     });
 
     if (!parsed.success) {
@@ -54,27 +62,56 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { page, limit, search } = parsed.data;
+    const { page, limit, search, minAmount, maxAmount, minCount, maxCount, sortBy, sortOrder, fundId } = parsed.data;
 
-    const where = {
+    const where: Prisma.DonorWhereInput = {
       orgId,
       ...(search && {
         OR: [
-          { firstName: { contains: search, mode: "insensitive" as const } },
-          { lastName: { contains: search, mode: "insensitive" as const } },
-          { email: { contains: search, mode: "insensitive" as const } },
-          { phone: { contains: search, mode: "insensitive" as const } },
-          { normalizedPhone: { contains: search, mode: "insensitive" as const } },
+          { firstName: { contains: search, mode: "insensitive" } },
+          { lastName: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+          { phone: { contains: search, mode: "insensitive" } },
+          { normalizedPhone: { contains: search, mode: "insensitive" } },
         ],
       }),
+      ...( (minAmount !== undefined || maxAmount !== undefined) && {
+        totalSpent: {
+          ...(minAmount !== undefined && { gte: minAmount }),
+          ...(maxAmount !== undefined && { lte: maxAmount }),
+        },
+      }),
+      ...( (minCount !== undefined || maxCount !== undefined) && {
+        ordersCount: {
+          ...(minCount !== undefined && { gte: minCount }),
+          ...(maxCount !== undefined && { lte: maxCount }),
+        },
+      }),
+      ...(fundId && {
+        donations: {
+          some: {
+            fundId,
+            status: "COMPLETED",
+          }
+        }
+      })
     };
+
+    let orderByClause: Prisma.DonorOrderByWithRelationInput = {};
+    if (sortBy === "totalSpent") {
+      orderByClause = { totalSpent: sortOrder };
+    } else if (sortBy === "ordersCount") {
+      orderByClause = { ordersCount: sortOrder };
+    } else {
+      orderByClause = { lastDonationAt: { sort: sortOrder, nulls: 'last' } as any };
+    }
 
     const [donors, total] = await Promise.all([
       prisma.donor.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { lastDonationAt: "desc" },
+        orderBy: orderByClause,
         select: {
           id: true,
           wcCustomerId: true,
@@ -96,6 +133,9 @@ export async function GET(request: NextRequest) {
             orderBy: { wcDatePaid: "desc" },
             where: { status: "COMPLETED" },
             select: {
+              utmSource: true,
+              utmCampaign: true,
+              wcDatePaid: true,
               fund: {
                 select: {
                   name: true

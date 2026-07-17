@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
 
     const where = {
       orgId, // ← always scoped to the org
+      name: { not: "Quiz Registration" },
       ...(search && {
         OR: [
           { name: { contains: search, mode: "insensitive" as const } },

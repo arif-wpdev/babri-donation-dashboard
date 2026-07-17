@@ -86,3 +86,15 @@ export const donationFilterSchema = paginationSchema.extend({
 });
 
 export type DonationFilterInput = z.infer<typeof donationFilterSchema>;
+
+export const donorFilterSchema = paginationSchema.extend({
+  minAmount: z.coerce.number().min(0).optional(),
+  maxAmount: z.coerce.number().min(0).optional(),
+  minCount: z.coerce.number().int().min(0).optional(),
+  maxCount: z.coerce.number().int().min(0).optional(),
+  sortBy: z.enum(["lastDonation", "totalSpent", "ordersCount"]).default("lastDonation"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  fundId: z.string().optional(),
+});
+
+export type DonorFilterInput = z.infer<typeof donorFilterSchema>;

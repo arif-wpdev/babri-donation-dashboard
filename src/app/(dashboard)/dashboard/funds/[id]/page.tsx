@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useFunds } from "@/hooks/use-funds";
 import { useDonations } from "@/hooks/use-donations";
@@ -8,31 +8,82 @@ import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { DateRange } from "react-day-picker";
 import { FundTransactionsTable } from "@/components/reporting/fund-transactions-table";
 import { Card, CardContent } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Users, CreditCard, DollarSign } from "lucide-react";
+import { ArrowLeft, Users, CreditCard, TrendingUp, CalendarIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
+import { subDays, startOfMonth, startOfYear } from "date-fns";
+
+export type FilterPreset = "all" | "today" | "yesterday" | "last7" | "last30" | "thisMonth" | "thisYear" | "custom";
 
 export default function FundDetailsPage() {
   const params = useParams();
   const fundId = params.id as string;
   
-  const [dateRange, setDateRange] = useState<DateRange | undefined>();
-  const [source, setSource] = useState<string>("All");
+  const [filter, setFilter] = useState<FilterPreset>("today");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
+
+  const dateRange = useMemo<DateRange | null>(() => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    
+    switch (filter) {
+      case "today": {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        return { from: start, to: today };
+      }
+      case "yesterday": {
+        const start = subDays(new Date(), 1);
+        start.setHours(0, 0, 0, 0);
+        const end = subDays(new Date(), 1);
+        end.setHours(23, 59, 59, 999);
+        return { from: start, to: end };
+      }
+      case "last7":
+        return { from: subDays(today, 6), to: today };
+      case "last30":
+        return { from: subDays(today, 29), to: today };
+      case "thisMonth":
+        return { from: startOfMonth(today), to: today };
+      case "thisYear":
+        return { from: startOfYear(today), to: today };
+      case "custom":
+        return customRange || null;
+      case "all":
+      default:
+        return null;
+    }
+  }, [filter, customRange]);
+
+  const source = "All"; // Kept for compatibility with the table component
 
   // Fetch all funds to find the current one (or we could fetch a single fund if API supported it)
   const { data: fundsData, isLoading: isLoadingFunds } = useFunds({ limit: 100 });
-  const fund = fundsData?.data.find(f => f.id === fundId);
+  const fund = fundsData?.data.find((f: any) => f.id === fundId);
 
-  // Fetch donations to calculate KPIs for this specific fund
-  const { data: donationsData, isLoading: isLoadingDonations } = useDonations({ limit: 1000 });
-  const fundDonations = donationsData?.data.filter(d => d.fundId === fundId) || [];
+  // Fetch donations summary to calculate KPIs for this specific fund
+  const { data: donationsData, isLoading: isLoadingDonations } = useDonations({ 
+    limit: 1, 
+    fundId,
+    from: dateRange?.from?.toISOString(),
+    to: dateRange?.to?.toISOString(),
+  });
 
-  // Calculate KPIs
-  const totalRaised = fundDonations.reduce((sum, d) => sum + Number(d.amount), 0);
-  const totalDonations = fundDonations.length;
-  // Get unique donors
-  const uniqueDonors = new Set(fundDonations.filter(d => d.donorId).map(d => d.donorId)).size;
+  // Calculate KPIs using the backend summary to avoid pagination limits
+  const totalRaised = donationsData?.summary?.totalAmount || 0;
+  const totalDonations = donationsData?.summary?.totalDonations || 0;
+  const uniqueDonors = donationsData?.summary?.uniqueDonors || 0;
+
+  const tabs: { value: FilterPreset; label: string }[] = [
+    { value: "today", label: "Today" },
+    { value: "yesterday", label: "Yesterday" },
+    { value: "last7", label: "This Week" },
+    { value: "thisMonth", label: "This Month" },
+    { value: "thisYear", label: "This Year" },
+    { value: "all", label: "All Time" },
+  ];
 
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -65,23 +116,38 @@ export default function FundDetailsPage() {
             </p>
           </div>
           
-          <div className="flex items-center gap-3">
-            <Select value={source} onValueChange={setSource}>
-              <SelectTrigger className="w-[140px] bg-white border-border/50 rounded-xl">
-                <SelectValue placeholder="Source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All Sources</SelectItem>
-                <SelectItem value="Web">Website</SelectItem>
-                <SelectItem value="Manual">Manual Entry</SelectItem>
-              </SelectContent>
-            </Select>
-
+          <div className="flex items-center justify-start overflow-x-auto gap-2 bg-white p-2 rounded-xl border border-border shadow-sm">
             <DateRangePicker 
-              date={dateRange} 
-              setDate={setDateRange} 
-              className="rounded-xl border-border/50"
+              date={customRange} 
+              setDate={(range) => {
+                setCustomRange(range);
+                if (range) setFilter("custom");
+              }}
+              trigger={
+                <Button variant="ghost" size="icon" className={cn("size-9 rounded-md shrink-0", filter === 'custom' && "bg-muted")}>
+                  <CalendarIcon className="size-4 text-muted-foreground" />
+                </Button>
+              }
             />
+            
+            <div className="flex gap-1 shrink-0">
+              {tabs.map((tab) => (
+                <Button
+                  key={tab.value}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFilter(tab.value)}
+                  className={cn(
+                    "rounded-md text-sm font-medium transition-colors h-8 px-3",
+                    filter === tab.value 
+                      ? "bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary" 
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  {tab.label}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -94,11 +160,11 @@ export default function FundDetailsPage() {
               <div className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-white/80">Total Raised</span>
                 <span className="text-3xl font-bold">
-                  {isLoadingDonations ? <Skeleton className="h-8 w-24 bg-white/20" /> : `৳${totalRaised.toLocaleString()}`}
+                  {isLoadingDonations ? <Skeleton className="h-8 w-24 bg-white/20" /> : `৳${Number(totalRaised).toLocaleString()}`}
                 </span>
               </div>
               <div className="size-10 rounded-full bg-white/10 flex items-center justify-center">
-                <DollarSign className="size-5 text-white" />
+                <TrendingUp className="size-5 text-white" />
               </div>
             </div>
           </CardContent>
@@ -142,7 +208,7 @@ export default function FundDetailsPage() {
         <h3 className="text-xl font-bold text-foreground">Transaction History</h3>
         <FundTransactionsTable 
           fundId={fundId} 
-          dateRange={dateRange} 
+          dateRange={dateRange || undefined} 
           source={source} 
         />
       </div>

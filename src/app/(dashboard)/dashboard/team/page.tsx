@@ -89,12 +89,7 @@ export default function TeamPage() {
   return (
     <div className="flex flex-col gap-6 pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Team Management</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage who has access to view this dashboard.
-          </p>
-        </div>
+
         
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger 

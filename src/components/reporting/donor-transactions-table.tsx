@@ -53,7 +53,7 @@ export function DonorTransactionsTable({ donorId }: DonorTransactionsTableProps)
               </TableCell>
             </TableRow>
           ) : (
-            filteredDonations.map((donation) => (
+            filteredDonations.map((donation: any) => (
               <TableRow key={donation.id} className="hover:bg-muted/50 transition-colors">
                 <TableCell className="text-muted-foreground whitespace-nowrap">
                   {donation.wcDateCreated ? format(new Date(donation.wcDateCreated), "MMM dd, yyyy") : "N/A"}

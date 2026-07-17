@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       : decryptedKey;
 
     return NextResponse.json({
-      orgId: org.id,
+      orgId: orgId,
       wcBaseUrl: org.wcBaseUrl,
       wcConsumerKey: maskedKey,
       hasSecret: true, // we assume it exists if key exists
