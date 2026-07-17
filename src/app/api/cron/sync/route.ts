@@ -2,6 +2,8 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { runSync } from "@/lib/sync";
 
+export const maxDuration = 60; // Max execution time for Vercel Hobby
+
 /**
  * GET /api/cron/sync
  * Triggered by Vercel Cron (or any scheduler) to run automated syncs.

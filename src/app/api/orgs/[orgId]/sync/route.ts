@@ -2,6 +2,8 @@ import type { NextRequest } from "next/server";
 import { requireOrgAccess, ApiError } from "@/lib/rbac";
 import { runSync } from "@/lib/sync";
 
+export const maxDuration = 60; // Max execution time for Vercel Hobby
+
 /**
  * POST /api/orgs/[orgId]/sync
  * Triggers a manual WooCommerce sync for the given organization.
