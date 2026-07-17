@@ -27,10 +27,9 @@ export async function POST(
 
     // 2. Read headers
     const signature = request.headers.get("x-wc-webhook-signature");
-    const event = request.headers.get("x-wc-webhook-event"); // e.g. "created", "updated"
     const topic = request.headers.get("x-wc-webhook-topic"); // e.g. "order.created"
 
-    if (!signature || !event || !topic) {
+    if (!signature || !topic) {
       return Response.json({ error: "Missing required WooCommerce headers" }, { status: 400 });
     }
 
