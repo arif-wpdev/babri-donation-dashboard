@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { ExitPrompt } from "@/components/pwa/exit-prompt";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -50,6 +51,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ServiceWorkerRegister />
         <InstallPrompt />
+        <ExitPrompt />
         <QueryProvider>
           <TooltipProvider>
             {children}
