@@ -1,10 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -24,6 +26,18 @@ export const metadata: Metadata = {
   keywords: ["donations", "nonprofit", "WooCommerce", "analytics", "fundraising"],
   authors: [{ name: "TDF Donation Dashboard" }],
   robots: { index: false, follow: false }, // Private SaaS — no indexing
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "TDF Dashboard",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#047857",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -34,6 +48,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn("h-full", "antialiased", inter.variable, "font-sans", geist.variable)}>
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <ServiceWorkerRegister />
+        <InstallPrompt />
         <QueryProvider>
           <TooltipProvider>
             {children}
