@@ -72,7 +72,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
 
         
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+          <DropdownMenuTrigger className="outline-none">
             <div className="flex items-center gap-3 pl-2 border-l border-border/40 cursor-pointer hover:opacity-80 transition-opacity">
               <div className="flex flex-col items-end hidden md:flex">
                 <span className="text-sm font-semibold leading-none mb-1">
