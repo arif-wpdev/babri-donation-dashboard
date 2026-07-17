@@ -123,21 +123,29 @@ export async function GET(request: NextRequest) {
     const thisMonthRaised = Number(thisMonthAggr._sum.total || 0);
 
     // 2. Trend Data (based on range)
-    // If range is <= 31 days, group by Day. Otherwise, group by Month.
-    let isDayGrouping = false;
+    // If range <= 24 hours, group by Hour
+    // If range <= 31 days, group by Day
+    // Otherwise, group by Month
+    let grouping: "hour" | "day" | "month" = "day";
+    
     if (fromDate && toDate) {
       const diffTime = Math.abs(toDate.getTime() - fromDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays <= 31) isDayGrouping = true;
+      const diffHours = diffTime / (1000 * 60 * 60);
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+      
+      if (diffHours <= 24) grouping = "hour";
+      else if (diffDays <= 31) grouping = "day";
+      else grouping = "month";
     } else if (fromDate && !toDate) {
       const diffTime = Math.abs(new Date().getTime() - fromDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays <= 31) isDayGrouping = true;
+      const diffHours = diffTime / (1000 * 60 * 60);
+      const diffDays = diffTime / (1000 * 60 * 60 * 24);
+      
+      if (diffHours <= 24) grouping = "hour";
+      else if (diffDays <= 31) grouping = "day";
+      else grouping = "month";
     } else if (!fromDate && !toDate) {
-      // All time, group by month (or year depending on how old, but month is safe)
-      isDayGrouping = false;
-    } else {
-      isDayGrouping = true;
+      grouping = "month"; // All time
     }
 
     // Default to last 30 days if no range provided, for the trend chart?
@@ -154,15 +162,22 @@ export async function GET(request: NextRequest) {
       orderBy: { wcDatePaid: "asc" },
     });
 
+    const hourFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, hour: "numeric", hour12: true });
     const dateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, month: "short", day: "numeric" });
     const monthFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, month: "short", year: "numeric" });
 
     const trendMap = new Map<string, number>();
     trendDonations.forEach((d) => {
       if (!d.wcDatePaid) return;
-      const key = isDayGrouping 
-        ? dateFormatter.format(d.wcDatePaid) // e.g. "Jul 15"
-        : monthFormatter.format(d.wcDatePaid); // e.g. "Jul 2026"
+      
+      let key = "";
+      if (grouping === "hour") {
+        key = hourFormatter.format(d.wcDatePaid); // e.g. "10 AM"
+      } else if (grouping === "day") {
+        key = dateFormatter.format(d.wcDatePaid); // e.g. "Jul 15"
+      } else {
+        key = monthFormatter.format(d.wcDatePaid); // e.g. "Jul 2026"
+      }
       
       const current = trendMap.get(key) || 0;
       trendMap.set(key, current + Number(d.total));
