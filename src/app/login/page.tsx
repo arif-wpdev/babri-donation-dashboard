@@ -38,10 +38,6 @@ export default async function LoginPage(props: { searchParams: Promise<{ callbac
               src="/logo.png" 
               alt="TDF Logo" 
               className="h-full object-contain" 
-              onError={(e) => { 
-                e.currentTarget.style.display = 'none'; 
-                e.currentTarget.parentElement!.innerHTML = '<div class="size-12 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shadow-lg"><span class="text-2xl font-bold font-serif italic">TDF</span></div>'; 
-              }} 
             />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Welcome back</h1>
