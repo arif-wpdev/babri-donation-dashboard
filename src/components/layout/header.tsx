@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Search, Mail } from "lucide-react";
+import { Bell, Search, Mail, LogOut } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -12,7 +12,15 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 
 export function Header({ user }: { user?: { name?: string | null, email?: string | null, role?: string } }) {
   const pathname = usePathname();
@@ -63,20 +71,44 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
       <div className="flex items-center gap-6">
 
         
-        <div className="flex items-center gap-3 pl-2 border-l border-border/40">
-          <div className="flex flex-col items-end hidden md:flex">
-            <span className="text-sm font-semibold leading-none mb-1">
-              {user?.name || (user?.role === "ORG_USER" ? "Employee" : "Admin")}
-            </span>
-            <span className="text-xs text-muted-foreground leading-none">{user?.email || "No email"}</span>
-          </div>
-          <Avatar className="size-10 border-2 border-white shadow-sm">
-            <AvatarImage src="" alt={user?.name || "User"} />
-            <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-              {(user?.name?.[0] || user?.email?.[0] || "U").toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <div className="flex items-center gap-3 pl-2 border-l border-border/40 cursor-pointer hover:opacity-80 transition-opacity">
+              <div className="flex flex-col items-end hidden md:flex">
+                <span className="text-sm font-semibold leading-none mb-1">
+                  {user?.name || (user?.role === "ORG_USER" ? "Employee" : "Admin")}
+                </span>
+                <span className="text-xs text-muted-foreground leading-none">{user?.email || "No email"}</span>
+              </div>
+              <Avatar className="size-10 border-2 border-white shadow-sm">
+                <AvatarImage src="" alt={user?.name || "User"} />
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {(user?.name?.[0] || user?.email?.[0] || "U").toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 mt-2">
+            <div className="flex items-center justify-start gap-2 p-2">
+              <div className="flex flex-col space-y-1 leading-none">
+                {user?.name && <p className="font-medium">{user.name}</p>}
+                {user?.email && (
+                  <p className="w-[200px] truncate text-sm text-muted-foreground">
+                    {user.email}
+                  </p>
+                )}
+              </div>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem 
+              className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+              onClick={() => signOut({ callbackUrl: "/login" })}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Log out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );
