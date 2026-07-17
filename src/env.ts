@@ -12,7 +12,7 @@ export const env = createEnv({
     ENCRYPTION_KEY: z.string().length(64), // 32 bytes hex-encoded
     CRON_SECRET: z.string().min(16),
     SEED_SUPER_ADMIN_EMAIL: z.string().email().optional(),
-    SEED_SUPER_ADMIN_PASSWORD: z.string().min(12).optional(),
+    SEED_SUPER_ADMIN_PASSWORD: z.string().min(8).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
