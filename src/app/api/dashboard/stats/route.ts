@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
 import { subMonths, startOfMonth, format } from "date-fns";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth();

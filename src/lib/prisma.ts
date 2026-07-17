@@ -17,7 +17,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 // ─────────────────────────────────────────────────────────────────────────────
 
 function createPrismaClient() {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = process.env.DATABASE_URL || (process.env.SKIP_ENV_VALIDATION ? "postgresql://dummy:dummy@localhost:5432/dummy" : undefined);
 
   if (!connectionString) {
     throw new Error(
