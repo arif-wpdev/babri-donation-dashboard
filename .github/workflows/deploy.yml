@@ -24,6 +24,8 @@ jobs:
 
       - name: Build Project
         run: npm run build
+        env:
+          SKIP_ENV_VALIDATION: "1"
 
       - name: Prepare Standalone Directory
         run: |
