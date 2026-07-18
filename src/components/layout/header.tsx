@@ -25,9 +25,9 @@ import { signOut } from "next-auth/react";
 export function Header({ user }: { user?: { name?: string | null, email?: string | null, role?: string } }) {
   const pathname = usePathname();
   const pathSegments = pathname.split("/").filter(Boolean);
-  
+
   let title = pathSegments[pathSegments.length - 1] || "TDF Donation Dashboard";
-  
+
   if (title === "dashboard") {
     title = "TDF Donation Dashboard";
   } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "donors" && pathSegments.length === 3) {
@@ -35,7 +35,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
   } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "funds" && pathSegments.length === 3) {
     title = "Fund Details";
   }
-  
+
   let displayTitle = title === "TDF Donation Dashboard" ? title : (title.charAt(0).toUpperCase() + title.slice(1));
 
   if (title === "funds") displayTitle = "Funds Overview";
@@ -56,7 +56,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <SidebarTrigger className="-ml-1 text-muted-foreground hover:text-foreground transition-colors hidden md:block" />
         <Separator orientation="vertical" className="h-6 bg-border/60 hidden md:block" />
-        
+
         {/* Mobile Logo */}
         <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 md:hidden overflow-hidden">
           <img src="/logo.png" alt="TDF Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-sm font-bold font-serif italic text-primary">TDF</span>'; }} />
@@ -67,10 +67,10 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
           <p className="text-xs md:text-sm text-muted-foreground truncate">{today}</p>
         </div>
       </div>
-      
+
       <div className="flex items-center gap-6">
 
-        
+
         <DropdownMenu>
           <DropdownMenuTrigger className="outline-none">
             <div className="flex items-center gap-3 pl-2 border-l border-border/40 cursor-pointer hover:opacity-80 transition-opacity">
@@ -100,7 +100,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
               </div>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
               onClick={() => signOut({ callbackUrl: "/login" })}
             >

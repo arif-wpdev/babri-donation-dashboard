@@ -115,11 +115,10 @@ export function AppSidebar({ userRole, ...props }: React.ComponentProps<typeof S
                       <SidebarMenuButton
                         render={<Link href={item.url} />}
                         isActive={isActive}
-                        className={`flex items-center gap-3 px-4 py-6 transition-colors rounded-r-full mr-4 ${
-                          isActive
+                        className={`flex items-center gap-3 px-4 py-6 transition-colors rounded-r-full mr-4 ${isActive
                             ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground font-medium"
                             : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                        }`}
+                          }`}
                       >
                         <item.icon className={`size-5 ${isActive ? "text-primary-foreground" : "text-sidebar-foreground/60"}`} />
                         <span>{item.title}</span>

@@ -2,29 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Target, Users, Settings } from "lucide-react";
+import { LayoutDashboard, Target, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const bottomNavItems = [
-  {
-    title: "Home",
-    url: "/dashboard",
-    icon: LayoutDashboard,
-  },
   {
     title: "Funds",
     url: "/dashboard/funds",
     icon: Target,
   },
   {
+    title: "Home",
+    url: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
     title: "Donors",
     url: "/dashboard/donors",
     icon: Users,
-  },
-  {
-    title: "Settings",
-    url: "/dashboard/settings",
-    icon: Settings,
   },
 ];
 
