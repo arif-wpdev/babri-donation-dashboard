@@ -8,11 +8,16 @@ import { format, formatDistanceToNow, differenceInHours } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, ChevronLeft, ChevronRight, Filter, X } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Filter, X, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 
 export default function DonorsDirectoryPage() {
   const [search, setSearch] = useState("");
@@ -32,6 +37,93 @@ export default function DonorsDirectoryPage() {
   const { data, isLoading } = useDonors({ search, page, limit, minAmount, maxAmount, minCount, maxCount, sortBy, sortOrder, fundId });
 
   const activeFilterCount = [minAmount, maxAmount, minCount, maxCount].filter(v => v !== "").length + (fundId !== "all" ? 1 : 0);
+
+  const handleExport = async (exportFormat: "csv" | "excel" | "pdf") => {
+    try {
+      const toastId = toast.loading(`Preparing ${exportFormat.toUpperCase()} export...`);
+      
+      const params = new URLSearchParams();
+      if (search) params.append("search", search);
+      params.append("page", "1");
+      params.append("limit", "10000"); // High limit for export
+      if (minAmount !== "") params.append("minAmount", minAmount.toString());
+      if (maxAmount !== "") params.append("maxAmount", maxAmount.toString());
+      if (minCount !== "") params.append("minCount", minCount.toString());
+      if (maxCount !== "") params.append("maxCount", maxCount.toString());
+      if (fundId !== "all") params.append("fundId", fundId);
+      params.append("sortBy", sortBy);
+      params.append("sortOrder", sortOrder);
+      
+      const res = await fetch(`/api/donors?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch data for export");
+      
+      const { data: allDonors } = await res.json();
+      
+      if (!allDonors || allDonors.length === 0) {
+        toast.error("No donors to export", { id: toastId });
+        return;
+      }
+
+      const exportData = allDonors.map((donor: any) => {
+        const dateStr = donor.donations?.[0]?.wcDatePaid || donor.lastDonationAt || donor.wcDateCreated;
+        const formattedDate = dateStr ? format(new Date(dateStr), "MMM dd, yyyy") : "-";
+        
+        return {
+          Name: donor.firstName || donor.lastName ? `${donor.firstName || ""} ${donor.lastName || ""}`.trim() : (donor.email || donor.phone || donor.normalizedPhone || "Anonymous"),
+          Email: donor.email || "-",
+          Phone: donor.phone || donor.normalizedPhone || "-",
+          "Total Donation (Tk)": Number(donor.totalSpent || 0),
+          "Donations": donor.ordersCount || 0,
+          "Latest Fund": donor.donations?.[0]?.fund?.name || "General",
+          "Last Donated": formattedDate,
+          "Source": donor.donations?.[0]?.utmSource || "Direct",
+          "Campaign": donor.donations?.[0]?.utmCampaign ? "Paid" : "Organic"
+        };
+      });
+
+      if (exportFormat === "csv") {
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const csv = XLSX.utils.sheet_to_csv(worksheet);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `Donors_Export_${format(new Date(), "yyyy-MM-dd")}.csv`;
+        link.click();
+      } 
+      else if (exportFormat === "excel") {
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Donors");
+        XLSX.writeFile(workbook, `Donors_Export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+      }
+      else if (exportFormat === "pdf") {
+        const doc = new jsPDF("landscape", "pt", "a4");
+        
+        doc.setFontSize(16);
+        doc.text("Donors Directory Report", 40, 40);
+        doc.setFontSize(10);
+        doc.text(`Generated on: ${format(new Date(), "MMM dd, yyyy HH:mm")}`, 40, 60);
+        
+        const headers = [Object.keys(exportData[0])];
+        const rows = exportData.map((obj: any) => Object.values(obj));
+        
+        autoTable(doc, {
+          head: headers,
+          body: rows,
+          startY: 80,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [13, 71, 43] }, // Primary brand color
+        });
+        
+        doc.save(`Donors_Export_${format(new Date(), "yyyy-MM-dd")}.pdf`);
+      }
+      
+      toast.success(`${exportFormat.toUpperCase()} export downloaded successfully`, { id: toastId });
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export data");
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -62,6 +154,25 @@ export default function DonorsDirectoryPage() {
                   }}
                 />
               </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="outline" className="relative rounded-xl border-border/50 gap-2" />}>
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline-block">Export</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40 rounded-xl">
+                  <DropdownMenuItem onClick={() => handleExport("pdf")} className="cursor-pointer">
+                    Download PDF (A4)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("excel")} className="cursor-pointer">
+                    Download Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("csv")} className="cursor-pointer">
+                    Download CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
                 <PopoverTrigger render={
                   <Button variant="outline" size="icon" className="relative rounded-xl border-border/50">

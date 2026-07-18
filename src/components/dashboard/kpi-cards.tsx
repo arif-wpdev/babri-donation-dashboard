@@ -26,6 +26,7 @@ export function KpiCards({ data, isLoading, filter, setFilter, customRange, setC
     { value: "last7", label: "This Week" },
     { value: "thisMonth", label: "This Month" },
     { value: "thisYear", label: "This Year" },
+    { value: "all", label: "All Time" },
   ];
 
   const newDonors = Math.max(0, (data?.totalDonors || 0) - (data?.repeatDonors || 0));
