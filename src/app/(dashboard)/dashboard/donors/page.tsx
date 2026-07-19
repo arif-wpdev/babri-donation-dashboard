@@ -99,9 +99,9 @@ export default function DonorsDirectoryPage() {
       else if (exportFormat === "pdf") {
         const doc = new jsPDF("landscape", "pt", "a4");
         
-        // Load Bengali font for PDF
+        // Load Bengali/English combined font for PDF
         try {
-          const fontUrl = "/fonts/NotoSansBengali-Regular.ttf";
+          const fontUrl = "/fonts/HindSiliguri-Regular.ttf";
           const fontRes = await fetch(fontUrl);
           const fontBuffer = await fontRes.arrayBuffer();
           const fontUint8 = new Uint8Array(fontBuffer);
@@ -111,11 +111,11 @@ export default function DonorsDirectoryPage() {
           }
           const base64Font = window.btoa(binary);
           
-          doc.addFileToVFS("NotoSansBengali.ttf", base64Font);
-          doc.addFont("NotoSansBengali.ttf", "NotoSansBengali", "normal");
-          doc.setFont("NotoSansBengali");
+          doc.addFileToVFS("HindSiliguri.ttf", base64Font);
+          doc.addFont("HindSiliguri.ttf", "HindSiliguri", "normal");
+          doc.setFont("HindSiliguri");
         } catch (e) {
-          console.error("Failed to load Bengali font", e);
+          console.error("Failed to load font", e);
         }
 
         doc.setFontSize(16);
@@ -132,7 +132,7 @@ export default function DonorsDirectoryPage() {
           body: rows,
           startY: 80,
           styles: { 
-            font: "NotoSansBengali",
+            font: "HindSiliguri",
             fontSize: 8,
             textColor: "#0a0a0a" 
           },
