@@ -57,11 +57,11 @@ export async function GET(request: NextRequest) {
 
     // 1. Total KPIs (in range)
     const rangeDonationsCount = await prisma.donation.count({ 
-      where: { orgId, ...rangeWhere } 
+      where: { orgId, status: "COMPLETED", ...rangeWhere } 
     });
     
     const rangeRaisedAggr = await prisma.donation.aggregate({
-      where: { orgId, ...rangeWhere },
+      where: { orgId, status: "COMPLETED", ...rangeWhere },
       _sum: { total: true },
       _avg: { total: true },
       _max: { total: true },
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
       where: {
         orgId,
         donations: {
-          some: rangeWhere
+          some: { status: "COMPLETED", ...rangeWhere }
         }
       }
     });
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
         orgId,
         ordersCount: { gt: 1 },
         donations: {
-          some: rangeWhere
+          some: { status: "COMPLETED", ...rangeWhere }
         }
       }
     });
@@ -105,6 +105,7 @@ export async function GET(request: NextRequest) {
     const todayAggr = await prisma.donation.aggregate({
       where: { 
         orgId, 
+        status: "COMPLETED",
         wcDatePaid: { gte: startOfToday, lte: endOfToday } 
       },
       _sum: { total: true },
@@ -116,6 +117,7 @@ export async function GET(request: NextRequest) {
     const thisMonthAggr = await prisma.donation.aggregate({
       where: { 
         orgId, 
+        status: "COMPLETED",
         wcDatePaid: { gte: startOfThisMonth } 
       },
       _sum: { total: true },
@@ -153,6 +155,7 @@ export async function GET(request: NextRequest) {
     const trendDonations = await prisma.donation.findMany({
       where: {
         orgId,
+        status: "COMPLETED",
         ...rangeWhere
       },
       select: {
@@ -192,7 +195,7 @@ export async function GET(request: NextRequest) {
     // We group donations by fundId in the selected range
     const fundGroups = await prisma.donation.groupBy({
       by: ['fundId'],
-      where: { orgId, ...rangeWhere },
+      where: { orgId, status: "COMPLETED", ...rangeWhere },
       _sum: { total: true },
     });
 
@@ -200,7 +203,7 @@ export async function GET(request: NextRequest) {
     // groupBy doesn't support distinct count of donorId natively with relation fields in an easy way, 
     // so we can fetch all donations in range with fund and donorId and calculate in memory (fine for thousands, maybe slow for millions).
     const donationsForFunds = await prisma.donation.findMany({
-      where: { orgId, ...rangeWhere },
+      where: { orgId, status: "COMPLETED", ...rangeWhere },
       select: {
         fundId: true,
         donorId: true,
