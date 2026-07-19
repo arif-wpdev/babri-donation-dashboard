@@ -99,7 +99,27 @@ export default function DonorsDirectoryPage() {
       else if (exportFormat === "pdf") {
         const doc = new jsPDF("landscape", "pt", "a4");
         
+        // Load Bengali font for PDF
+        try {
+          const fontUrl = "/fonts/NotoSansBengali-Regular.ttf";
+          const fontRes = await fetch(fontUrl);
+          const fontBuffer = await fontRes.arrayBuffer();
+          const fontUint8 = new Uint8Array(fontBuffer);
+          let binary = '';
+          for (let i = 0; i < fontUint8.byteLength; i++) {
+            binary += String.fromCharCode(fontUint8[i]);
+          }
+          const base64Font = window.btoa(binary);
+          
+          doc.addFileToVFS("NotoSansBengali.ttf", base64Font);
+          doc.addFont("NotoSansBengali.ttf", "NotoSansBengali", "normal");
+          doc.setFont("NotoSansBengali");
+        } catch (e) {
+          console.error("Failed to load Bengali font", e);
+        }
+
         doc.setFontSize(16);
+        doc.setTextColor("#0a0a0a");
         doc.text("Donors Directory Report", 40, 40);
         doc.setFontSize(10);
         doc.text(`Generated on: ${format(new Date(), "MMM dd, yyyy HH:mm")}`, 40, 60);
@@ -111,8 +131,15 @@ export default function DonorsDirectoryPage() {
           head: headers,
           body: rows,
           startY: 80,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [13, 71, 43] }, // Primary brand color
+          styles: { 
+            font: "NotoSansBengali",
+            fontSize: 8,
+            textColor: "#0a0a0a" 
+          },
+          headStyles: { 
+            fillColor: [13, 71, 43],
+            textColor: "#ffffff"
+          }, // Primary brand color
         });
         
         doc.save(`Donors_Export_${format(new Date(), "yyyy-MM-dd")}.pdf`);
