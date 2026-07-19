@@ -30,6 +30,11 @@ export async function GET(
         lastDonationAt: true,
         wcDateCreated: true,
         syncedAt: true,
+        donations: {
+          select: { wcDatePaid: true, wcDateCreated: true },
+          orderBy: { wcDateCreated: 'asc' },
+          take: 1
+        },
       },
     });
 

@@ -17,7 +17,8 @@ export default function DonorProfilePage() {
   const { data: donorData, isLoading: isLoadingDonor } = useDonor(donorId);
   const donor = donorData?.data;
 
-  const firstDonationDate = donor?.wcDateCreated ? new Date(donor.wcDateCreated) : null;
+  const firstDonationDateStr = donor?.donations?.[0]?.wcDatePaid || donor?.donations?.[0]?.wcDateCreated || donor?.wcDateCreated;
+  const firstDonationDate = firstDonationDateStr ? new Date(firstDonationDateStr) : null;
   const lastDonationDate = donor?.lastDonationAt ? new Date(donor.lastDonationAt) : null;
 
   return (
