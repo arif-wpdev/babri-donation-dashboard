@@ -24,8 +24,15 @@ export async function runSync(
   triggeredBy: SyncTrigger
 ): Promise<SyncResult> {
   // ── Guard: prevent concurrent syncs ──────────────────────────────────────
+  // If a sync is RUNNING but started more than 15 minutes ago, consider it dead (e.g. Vercel timeout)
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+  
   const running = await prisma.syncLog.findFirst({
-    where: { orgId, status: "RUNNING" },
+    where: { 
+      orgId, 
+      status: "RUNNING",
+      startedAt: { gte: fifteenMinutesAgo }
+    },
     select: { id: true },
   });
 
@@ -35,6 +42,20 @@ export async function runSync(
       error: "A sync is already running for this organization.",
     };
   }
+
+  // Clean up any stale RUNNING syncs
+  await prisma.syncLog.updateMany({
+    where: {
+      orgId,
+      status: "RUNNING",
+      startedAt: { lt: fifteenMinutesAgo }
+    },
+    data: {
+      status: "FAILED",
+      error: "Sync timed out or crashed.",
+      completedAt: new Date()
+    }
+  });
 
   // ── Fetch org with WooCommerce credentials ────────────────────────────────
   const org = await prisma.organization.findUnique({
