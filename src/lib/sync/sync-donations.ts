@@ -19,7 +19,7 @@ export async function syncDonations(
   orgId: string
 ): Promise<SyncDonationsResult> {
   const orders = await fetchAllPages<WCOrder>(client, "orders", {
-    status: "processing", // Only fetch processing orders as requested
+    status: "processing,completed", // Fetch both processing and completed orders
   });
 
   let added = 0;
