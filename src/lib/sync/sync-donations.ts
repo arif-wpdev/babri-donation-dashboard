@@ -18,8 +18,13 @@ export async function syncDonations(
   client: WooCommerceClient,
   orgId: string
 ): Promise<SyncDonationsResult> {
+  // Fetch orders modified in the last 7 days to prevent fetching thousands of historical orders on every sync
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
   const orders = await fetchAllPages<WCOrder>(client, "orders", {
-    status: "processing,completed", // Fetch both processing and completed orders
+    status: "processing,completed",
+    modified_after: sevenDaysAgo.toISOString(),
   });
 
   let added = 0;
