@@ -23,7 +23,7 @@ export async function syncDonations(
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   const orders = await fetchAllPages<WCOrder>(client, "orders", {
-    status: "processing,completed",
+    status: "any",
     modified_after: sevenDaysAgo.toISOString(),
   });
 
