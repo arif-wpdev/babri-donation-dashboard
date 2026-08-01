@@ -18,14 +18,29 @@ export async function syncDonations(
   client: WooCommerceClient,
   orgId: string
 ): Promise<SyncDonationsResult> {
-  // Fetch orders modified in the last 7 days to prevent fetching thousands of historical orders on every sync
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const orders: WCOrder[] = [];
 
-  const orders = await fetchAllPages<WCOrder>(client, "orders", {
-    status: "any",
-    modified_after: sevenDaysAgo.toISOString(),
-  });
+  // Fetch up to 250 latest orders to prevent Vercel 60s timeout
+  for (let page = 1; page <= 3; page++) {
+    const response = await client.get("orders", {
+      status: "any",
+      per_page: 100,
+      page,
+    });
+    
+    const data = response.data as WCOrder[];
+    if (!data || data.length === 0) break;
+    
+    orders.push(...data);
+    
+    if (orders.length >= 250) {
+      orders.length = 250; // Trim to exactly 250
+      break;
+    }
+    
+    const totalPages = parseInt((response.headers as Record<string, string>)["x-wp-totalpages"] ?? "1", 10);
+    if (page >= totalPages) break;
+  }
 
   let added = 0;
   let updated = 0;
