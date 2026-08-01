@@ -14,7 +14,11 @@ export async function GET(request: NextRequest) {
       const org = await prisma.organization.findFirst();
       if (!org) return Response.json({ error: "No org found" }, { status: 400 });
       
-      const client = createWooCommerceClient(org as any);
+      const client = createWooCommerceClient({
+        wcBaseUrl: org.wcBaseUrl,
+        wcConsumerKey: org.wcConsumerKey,
+        wcConsumerSecret: org.wcConsumerSecret,
+      });
       const response = await client.get("orders", { status: "any", per_page: 50, page });
       const orders = response.data;
       
@@ -31,8 +35,9 @@ export async function GET(request: NextRequest) {
       }
       
       return Response.json({ page, processed: orders.length, added, updated, hasMore: orders.length === 50 });
-    } catch (e: any) {
-      return Response.json({ error: e.message }, { status: 500 });
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "Unknown error";
+      return Response.json({ error: errorMessage }, { status: 500 });
     }
   }
 
