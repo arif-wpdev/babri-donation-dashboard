@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useWcSettings, useUpdateWcSettings } from "@/hooks/use-sync";
+import { useWcSettings, useUpdateWcSettings, useManualSync } from "@/hooks/use-sync";
+import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function TdfIntegration() {
   const { data: settings, isLoading } = useWcSettings();
@@ -30,6 +31,10 @@ export function TdfIntegration() {
 
   const handleSave = () => {
     updateSettings.mutate(formData);
+  };
+
+  const handleSync = () => {
+    manualSync.mutate();
   };
 
   if (isLoading) {
@@ -114,6 +119,34 @@ export function TdfIntegration() {
             </div>
           </div>
         </div>
+
+        {isConnected && (
+          <div className="bg-muted/30 p-4 rounded-xl flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-foreground">Manual Data Sync</span>
+              <span className="text-xs text-muted-foreground mt-0.5">
+                Last synced: {settings.lastSyncedAt ? format(new Date(settings.lastSyncedAt), "MMM dd, yyyy HH:mm a") : "Never"}
+              </span>
+            </div>
+            <Button 
+              onClick={handleSync} 
+              disabled={manualSync.isPending}
+              className="bg-[#0D472B] hover:bg-[#051C10] text-white rounded-xl shadow-sm"
+            >
+              {manualSync.isPending ? (
+                <>
+                  <RefreshCw className="mr-2 size-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 size-4" />
+                  Sync Now
+                </>
+              )}
+            </Button>
+          </div>
+        )}
       </CardContent>
       
       <CardFooter className="pt-2 pb-6 px-6">
