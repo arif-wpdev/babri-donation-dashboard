@@ -6,6 +6,8 @@ interface WcSettings {
   wcConsumerKey: string;
   hasSecret: boolean;
   hasWebhookSecret?: boolean;
+  tdfApiKey?: string;
+  hasTdfWebhookSecret?: boolean;
   syncEnabled: boolean;
   lastSyncedAt: string | null;
 }
@@ -25,7 +27,7 @@ export function useUpdateWcSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: Partial<{ wcBaseUrl: string; wcConsumerKey: string; wcConsumerSecret: string; wcWebhookSecret: string }>) => {
+    mutationFn: async (data: Partial<{ wcBaseUrl: string; wcConsumerKey: string; wcConsumerSecret: string; wcWebhookSecret: string; tdfApiKey: string; tdfWebhookSecret: string }>) => {
       const res = await fetch("/api/orgs/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

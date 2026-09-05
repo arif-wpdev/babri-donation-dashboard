@@ -58,8 +58,12 @@ model Organization {
   wcConsumerSecret String
   wcWebhookSecret  String?
 
-  syncEnabled  Boolean  @default(true)
-  syncInterval Int      @default(360) /// Minutes between automatic syncs
+  /// Custom Donation Plugin connection
+  tdfApiKey        String?
+  tdfWebhookSecret String?
+
+  syncEnabled  Boolean   @default(true)
+  syncInterval Int       @default(360) /// Minutes between automatic syncs
   lastSyncedAt DateTime?
 
   createdAt DateTime  @default(now())
@@ -112,9 +116,14 @@ model Fund {
   id String @id @default(cuid())
 
   /// WooCommerce product ID within this org's store
-  wcProductId Int
-  orgId       String
-  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  wcProductId Int?
+  /// Custom Plugin campaign ID
+  tdfFundId   Int?
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  source String @default("woocommerce")
 
   name             String
   slug             String
@@ -130,9 +139,9 @@ model Fund {
   /// Snapshot of WooCommerce category array: [{id, name, slug}]
   categories Json?
   /// Snapshot of WooCommerce image array: [{id, src, alt}]
-  images Json?
+  images     Json?
   /// Additional WooCommerce meta fields stored as JSON
-  metaData Json?
+  metaData   Json?
 
   wcCreatedAt DateTime?
   wcUpdatedAt DateTime?
@@ -141,6 +150,7 @@ model Fund {
   donations Donation[]
 
   @@unique([orgId, wcProductId])
+  @@unique([orgId, tdfFundId])
   @@index([orgId])
   @@index([orgId, status])
   @@map("funds")
@@ -155,8 +165,13 @@ model Donor {
 
   /// WooCommerce customer ID; null for guest donors
   wcCustomerId Int?
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// Custom Plugin donor ID
+  tdfDonorId   Int?
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  source String @default("woocommerce")
 
   firstName String?
   lastName  String?
@@ -168,23 +183,24 @@ model Donor {
   normalizedPhone String?
 
   /// Full WooCommerce billing address snapshot
-  billingAddress Json?
+  billingAddress  Json?
   /// Full WooCommerce shipping address snapshot
   shippingAddress Json?
 
-  totalSpent   Decimal @default(0) @db.Decimal(12, 2)
-  ordersCount  Int     @default(0)
+  totalSpent       Decimal @default(0) @db.Decimal(12, 2)
+  ordersCount      Int     @default(0)
   isPayingCustomer Boolean @default(false)
 
-  lastDonationAt  DateTime?
-  wcDateCreated   DateTime?
-  wcDateModified  DateTime?
-  syncedAt        DateTime  @default(now())
+  lastDonationAt DateTime?
+  wcDateCreated  DateTime?
+  wcDateModified DateTime?
+  syncedAt       DateTime  @default(now())
 
   donations Donation[]
 
   // Keep unique constraint for WooCommerce customer sync
   @@unique([orgId, wcCustomerId])
+  @@unique([orgId, tdfDonorId])
   @@index([orgId])
   @@index([orgId, email])
   @@index([orgId, normalizedPhone])
@@ -199,9 +215,14 @@ model Donation {
   id String @id @default(cuid())
 
   /// WooCommerce order ID
-  wcOrderId Int
-  orgId     String
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  wcOrderId     Int?
+  /// Custom Plugin donation ID
+  tdfDonationId Int?
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  source String @default("woocommerce")
 
   /// Nullable: guest donors may not map to a Donor record
   donorId String?
@@ -229,20 +250,21 @@ model Donation {
   /// Billing address snapshot at time of donation
   billingSnapshot Json?
   /// Full WooCommerce line_items array snapshot
-  lineItems Json
+  lineItems       Json
 
   wcDateCreated   DateTime?
   wcDateModified  DateTime?
   wcDateCompleted DateTime?
   wcDatePaid      DateTime?
 
-  utmSource       String?
-  utmMedium       String?
-  utmCampaign     String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
 
   syncedAt DateTime @default(now())
 
   @@unique([orgId, wcOrderId])
+  @@unique([orgId, tdfDonationId])
   @@index([orgId])
   @@index([orgId, status])
   @@index([orgId, wcDatePaid])
@@ -256,7 +278,7 @@ model Donation {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model SyncLog {
-  id    String @id @default(cuid())
+  id    String       @id @default(cuid())
   orgId String
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -278,8 +300,8 @@ model SyncLog {
   donationsAdded   Int @default(0)
   donationsUpdated Int @default(0)
 
-  error       String? @db.Text /// Serialized error if status = FAILED
-  startedAt   DateTime @default(now())
+  error       String?   @db.Text /// Serialized error if status = FAILED
+  startedAt   DateTime  @default(now())
   completedAt DateTime?
 
   @@index([orgId])

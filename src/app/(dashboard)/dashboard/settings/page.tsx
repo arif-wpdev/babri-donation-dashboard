@@ -1,6 +1,7 @@
 "use client";
 
 import { WooCommerceIntegration } from "@/components/settings/woocommerce-integration";
+import { TdfIntegration } from "@/components/settings/tdf-integration";
 
 export default function SettingsPage() {
   return (
@@ -9,6 +10,7 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 gap-6 max-w-4xl">
         <WooCommerceIntegration />
+        <TdfIntegration />
       </div>
     </div>
   );

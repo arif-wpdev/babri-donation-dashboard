@@ -3,6 +3,7 @@ import { createWooCommerceClient } from "@/lib/woocommerce";
 import { syncFunds } from "@/lib/sync/sync-funds";
 import { syncDonors } from "@/lib/sync/sync-donors";
 import { syncDonations } from "@/lib/sync/sync-donations";
+import { syncTdfDonations } from "@/lib/sync/sync-tdf";
 import type { SyncTrigger } from "@prisma/client";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ export async function runSync(
       wcBaseUrl: true,
       wcConsumerKey: true,
       wcConsumerSecret: true,
+      tdfApiKey: true,
       syncEnabled: true,
     },
   });
@@ -99,6 +101,18 @@ export async function runSync(
     // ── Step 3: Sync Donations (WC Orders) ───────────────────────────────
     const donationsResult = await syncDonations(client, orgId);
 
+    // ── Step 4: Sync Custom Plugin Donations ─────────────────────────────
+    let tdfAdded = 0;
+    let tdfUpdated = 0;
+    let tdfTotal = 0;
+    
+    if (org.tdfApiKey) {
+      const tdfResult = await syncTdfDonations(orgId, org.tdfApiKey, org.wcBaseUrl);
+      tdfAdded = tdfResult.added;
+      tdfUpdated = tdfResult.updated;
+      tdfTotal = tdfResult.total;
+    }
+
     // ── Mark sync as successful ───────────────────────────────────────────
     await prisma.syncLog.update({
       where: { id: syncLog.id },
@@ -110,9 +124,9 @@ export async function runSync(
         donorsTotal: donorsResult.total,
         donorsAdded: donorsResult.added,
         donorsUpdated: donorsResult.updated,
-        donationsTotal: donationsResult.total,
-        donationsAdded: donationsResult.added,
-        donationsUpdated: donationsResult.updated,
+        donationsTotal: donationsResult.total + tdfTotal,
+        donationsAdded: donationsResult.added + tdfAdded,
+        donationsUpdated: donationsResult.updated + tdfUpdated,
         completedAt: new Date(),
       },
     });

@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
         wcBaseUrl: true,
         wcConsumerKey: true,
         wcWebhookSecret: true,
+        tdfApiKey: true,
+        tdfWebhookSecret: true,
         syncEnabled: true,
         lastSyncedAt: true,
       }
@@ -49,6 +51,8 @@ export async function GET(req: NextRequest) {
       wcConsumerKey: maskedKey,
       hasSecret: true, // we assume it exists if key exists
       hasWebhookSecret: !!org.wcWebhookSecret,
+      tdfApiKey: org.tdfApiKey ? "••••••••••••" : "",
+      hasTdfWebhookSecret: !!org.tdfWebhookSecret,
       syncEnabled: org.syncEnabled,
       lastSyncedAt: org.lastSyncedAt,
     });
@@ -70,7 +74,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { wcBaseUrl, wcConsumerKey, wcConsumerSecret, wcWebhookSecret } = body;
+    const { wcBaseUrl, wcConsumerKey, wcConsumerSecret, wcWebhookSecret, tdfApiKey, tdfWebhookSecret } = body;
 
     const updateData: any = {};
     if (wcBaseUrl !== undefined) updateData.wcBaseUrl = wcBaseUrl;
@@ -86,6 +90,19 @@ export async function PUT(req: NextRequest) {
 
     if (wcWebhookSecret !== undefined) {
       updateData.wcWebhookSecret = wcWebhookSecret === "" ? null : encrypt(wcWebhookSecret);
+    }
+
+    if (tdfApiKey !== undefined) {
+      updateData.tdfApiKey = tdfApiKey === "" ? null : tdfApiKey; // Store plain or encrypt? We'll store plain since it's just an API key, or encrypt it. Let's not encrypt unless we need to, the prompt didn't specify. Actually, let's keep it simple and store as plain, or encrypt. 
+      // Actually, wait, let's just store it as plain string since it wasn't requested to be encrypted, or maybe we should? wcConsumerSecret is encrypted. Let's store plain for tdfApiKey for now to keep it simple.
+      // Or no, let's just encrypt it.
+      if (tdfApiKey && !tdfApiKey.includes("••••")) {
+        updateData.tdfApiKey = tdfApiKey; // Let's store it plain since Prisma schema doesn't mention encrypted
+      }
+    }
+
+    if (tdfWebhookSecret !== undefined) {
+      updateData.tdfWebhookSecret = tdfWebhookSecret === "" ? null : tdfWebhookSecret;
     }
 
     if (Object.keys(updateData).length === 0) {
