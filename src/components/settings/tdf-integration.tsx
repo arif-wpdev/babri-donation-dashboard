@@ -14,6 +14,7 @@ import { RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
 export function TdfIntegration() {
   const { data: settings, isLoading } = useWcSettings();
   const updateSettings = useUpdateWcSettings();
+  const manualSync = useManualSync();
 
   const [formData, setFormData] = useState({
     tdfApiKey: "",
