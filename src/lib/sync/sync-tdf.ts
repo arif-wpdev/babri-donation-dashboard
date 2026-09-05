@@ -19,10 +19,7 @@ export async function syncTdfDonations(
   let updated = 0;
   let totalProcessed = 0;
 
-  // Fetch orders modified in the last 7 days
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const modifiedAfter = sevenDaysAgo.toISOString().replace("T", " ").substring(0, 19);
+  // Fetch all recent historical orders (removing the 7-day limit)
 
   let page = 1;
   const perPage = 100;
@@ -31,7 +28,6 @@ export async function syncTdfDonations(
     const url = new URL(`${baseUrl}/wp-json/tdf-donation/v1/donations`);
     url.searchParams.set("page", page.toString());
     url.searchParams.set("per_page", perPage.toString());
-    url.searchParams.set("modified_after", modifiedAfter);
 
     const response = await fetch(url.toString(), {
       headers: {
@@ -58,8 +54,8 @@ export async function syncTdfDonations(
     if (page >= (data.pages || 1)) break;
     page++;
     
-    // Safety break to prevent lambda timeout
-    if (page > 5) break; 
+    // Safety break to prevent lambda timeout (fetch up to 1000 latest records)
+    if (page > 10) break; 
   }
 
   // Recalculate Donor Stats

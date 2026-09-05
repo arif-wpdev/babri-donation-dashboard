@@ -227,5 +227,10 @@ export async function processTdfDonation(
     await prisma.donation.create({ data: donationData });
   }
 
+  // Recalculate stats for this specific donor so they immediately appear correctly
+  if (donorId) {
+    await recalculateDonorStats(orgId, donorId);
+  }
+
   return result;
 }
