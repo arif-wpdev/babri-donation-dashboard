@@ -19,7 +19,11 @@ export async function syncTdfDonations(
   let updated = 0;
   let totalProcessed = 0;
 
-  // Fetch all recent historical orders (removing the 7-day limit)
+  // Fetch orders modified in the last 30 days to ensure we get recent ones 
+  // (without hitting the 10-page limit for massive databases)
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const modifiedAfter = thirtyDaysAgo.toISOString().replace("T", " ").substring(0, 19);
 
   let page = 1;
   const perPage = 100;
@@ -28,11 +32,14 @@ export async function syncTdfDonations(
     const url = new URL(`${baseUrl}/wp-json/tdf-donation/v1/donations`);
     url.searchParams.set("page", page.toString());
     url.searchParams.set("per_page", perPage.toString());
+    url.searchParams.set("modified_after", modifiedAfter);
+    url.searchParams.set("order", "desc"); // Attempt to order by latest if API supports it
 
     const response = await fetch(url.toString(), {
       headers: {
         "X-TDF-Api-Key": tdfApiKey,
       },
+      cache: "no-store",
     });
 
     if (!response.ok) {

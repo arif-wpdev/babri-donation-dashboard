@@ -174,16 +174,20 @@ export async function processTdfDonation(
   const parseDate = (dateStr?: string | null) => {
     if (!dateStr) return null;
     
-    // If it's already an ISO string with Z or offset, use it directly
-    if (dateStr.endsWith("Z") || dateStr.match(/[+-]\d\d:\d\d$/)) {
-      return new Date(dateStr);
+    // The WP REST API or plugin might incorrectly append "Z" to local time.
+    // Strip any existing "Z" since we know it represents Bangladesh Local Time.
+    let cleanStr = dateStr.replace("Z", "").trim();
+    
+    // Replace space with T to make it a valid ISO string
+    cleanStr = cleanStr.replace(" ", "T");
+    
+    // If it already has an offset, use it directly
+    if (cleanStr.match(/[+-]\d\d:\d\d$/)) {
+      return new Date(cleanStr);
     }
     
-    // Replace space with T to make it a valid ISO string before offset
-    const isoString = dateStr.trim().replace(" ", "T");
-    
     // Append +06:00 to correctly parse it as Bangladesh local time
-    return new Date(isoString + "+06:00");
+    return new Date(cleanStr + "+06:00");
   };
 
   const donationData: Prisma.DonationUncheckedCreateInput = {
