@@ -174,7 +174,7 @@ export default function TransactionsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {donation.utmCampaign || "Organic"}
+                        {(donation.utmCampaign && donation.utmCampaign !== "unknown") ? donation.utmCampaign : "Organic"}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge 

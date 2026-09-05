@@ -70,7 +70,7 @@ export function DonorTransactionsTable({ donorId }: DonorTransactionsTableProps)
                   </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
-                  {donation.utmSource?.toLowerCase() === "fb" ? "Paid" : "Organic"}
+                  {(donation.utmCampaign && donation.utmCampaign !== "unknown") ? "Paid" : "Organic"}
                 </TableCell>
               </TableRow>
             ))

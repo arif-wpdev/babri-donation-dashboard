@@ -94,7 +94,7 @@ export function RecentDonations() {
                             <span>{formattedDate}</span>
                             <div className="flex items-center gap-1.5 mt-1">
                               <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donation.utmSource || "Direct"}</span>
-                              <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donation.utmCampaign ? "Paid" : "Organic"}</span>
+                              <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{(donation.utmCampaign && donation.utmCampaign !== "unknown") ? "Paid" : "Organic"}</span>
                             </div>
                           </div>
                         </div>
@@ -116,7 +116,7 @@ export function RecentDonations() {
                         {donation.utmSource || "Direct"}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
-                        {donation.utmCampaign ? "Paid" : "Organic"}
+                        {(donation.utmCampaign && donation.utmCampaign !== "unknown") ? "Paid" : "Organic"}
                       </TableCell>
                     </TableRow>
                   );

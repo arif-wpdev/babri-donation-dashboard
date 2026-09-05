@@ -77,7 +77,7 @@ export default function DonorsDirectoryPage() {
           "Latest Fund": donor.donations?.[0]?.fund?.name || "General",
           "Last Donated": formattedDate,
           "Source": donor.donations?.[0]?.utmSource || "Direct",
-          "Campaign": donor.donations?.[0]?.utmCampaign ? "Paid" : "Organic"
+          "Campaign": (donor.donations?.[0]?.utmCampaign && donor.donations[0].utmCampaign !== "unknown") ? "Paid" : "Organic"
         };
       });
 
@@ -425,9 +425,9 @@ export default function DonorsDirectoryPage() {
                               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                 <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donor.ordersCount || 0} Donations</span>
                                 {donor.donations?.[0]?.utmSource && (
-                                  <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donor.donations?.[0]?.utmSource}</span>
+                                  <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donor.donations?.[0]?.utmSource || "Direct"}</span>
                                 )}
-                                <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donor.donations?.[0]?.utmCampaign ? "Paid" : "Organic"}</span>
+                                <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{(donor.donations?.[0]?.utmCampaign && donor.donations[0].utmCampaign !== "unknown") ? "Paid" : "Organic"}</span>
                               </div>
                             </div>
                           </div>
@@ -457,8 +457,8 @@ export default function DonorsDirectoryPage() {
                         <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
                           {donor.donations?.[0]?.utmSource || "Direct"}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
-                          {donor.donations?.[0]?.utmCampaign ? "Paid" : "Organic"}
+                        <TableCell className="text-muted-foreground hidden md:table-cell">
+                          {(donor.donations?.[0]?.utmCampaign && donor.donations[0].utmCampaign !== "unknown") ? "Paid" : "Organic"}
                         </TableCell>
                       </TableRow>
                     );

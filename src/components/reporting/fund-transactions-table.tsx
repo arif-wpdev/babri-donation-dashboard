@@ -128,8 +128,8 @@ export function FundTransactionsTable({ fundId, dateRange, source }: FundTransac
                     <TableCell className="text-sm text-muted-foreground">
                       {donation.utmSource || "Direct"}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {donation.utmCampaign ? "Paid" : "Organic"}
+                    <TableCell className="text-muted-foreground text-sm">
+                      {(donation.utmCampaign && donation.utmCampaign !== "unknown") ? "Paid" : "Organic"}
                     </TableCell>
                     <TableCell className="text-center">
                       <Badge 
