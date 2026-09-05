@@ -173,7 +173,17 @@ export async function processTdfDonation(
 
   const parseDate = (dateStr?: string | null) => {
     if (!dateStr) return null;
-    return new Date(dateStr + (dateStr.endsWith("Z") ? "" : "Z"));
+    
+    // If it's already an ISO string with Z or offset, use it directly
+    if (dateStr.endsWith("Z") || dateStr.match(/[+-]\d\d:\d\d$/)) {
+      return new Date(dateStr);
+    }
+    
+    // Replace space with T to make it a valid ISO string before offset
+    const isoString = dateStr.trim().replace(" ", "T");
+    
+    // Append +06:00 to correctly parse it as Bangladesh local time
+    return new Date(isoString + "+06:00");
   };
 
   const donationData: Prisma.DonationUncheckedCreateInput = {
