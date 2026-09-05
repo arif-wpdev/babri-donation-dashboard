@@ -89,17 +89,17 @@ export async function runSync(
   });
 
   try {
-    // ── Build WooCommerce client ───────────────────────────────────────────
-    const client = createWooCommerceClient(org);
+    // ── WooCommerce Sync (Only if credentials exist) ───────────────────────
+    let fundsResult = { total: 0, added: 0, updated: 0 };
+    let donorsResult = { total: 0, added: 0, updated: 0 };
+    let donationsResult = { total: 0, added: 0, updated: 0 };
 
-    // ── Step 1: Sync Funds (WC Products) ─────────────────────────────────
-    const fundsResult = await syncFunds(client, orgId);
-
-    // ── Step 2: Sync Donors (WC Customers) ───────────────────────────────
-    const donorsResult = await syncDonors(client, orgId);
-
-    // ── Step 3: Sync Donations (WC Orders) ───────────────────────────────
-    const donationsResult = await syncDonations(client, orgId);
+    if (org.wcConsumerKey && org.wcConsumerSecret) {
+      const client = createWooCommerceClient(org);
+      fundsResult = await syncFunds(client, orgId);
+      donorsResult = await syncDonors(client, orgId);
+      donationsResult = await syncDonations(client, orgId);
+    }
 
     // ── Step 4: Sync Custom Plugin Donations ─────────────────────────────
     let tdfAdded = 0;
