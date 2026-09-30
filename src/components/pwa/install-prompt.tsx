@@ -89,11 +89,11 @@ export function InstallPrompt() {
         </button>
         
         <div className="size-12 shrink-0 bg-primary/10 rounded-xl flex items-center justify-center p-2">
-          <img src="/logo.png" alt="TDF Logo" className="w-full h-full object-contain" />
+          <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
         </div>
         
         <div className="flex-1 text-center sm:text-left pr-6 sm:pr-0">
-          <h3 className="font-semibold text-foreground text-sm">Install TDF Dashboard</h3>
+          <h3 className="font-semibold text-foreground text-sm">Install Dashboard</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Add to your home screen for quick and easy access.</p>
         </div>
         

@@ -34,11 +34,11 @@ export default async function LoginPage(props: { searchParams: Promise<{ callbac
           <div className="h-12 flex items-center justify-center mb-4">
             <img 
               src="/logo.png" 
-              alt="TDF Logo" 
+              alt="Logo" 
               className="h-full object-contain" 
             />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">TDF Donation Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Donation Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Enter your credentials to access dashboard
           </p>

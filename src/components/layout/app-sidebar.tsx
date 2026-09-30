@@ -90,12 +90,12 @@ export function AppSidebar({ userRole, ...props }: React.ComponentProps<typeof S
       <SidebarHeader>
         <div className="flex items-center gap-3 px-4 py-4">
           <div className="flex aspect-square size-10 items-center justify-center overflow-hidden">
-            <img src="/logo.png" alt="TDF Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-xl font-bold font-serif italic text-primary">TDF</span>'; }} />
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-xl font-bold font-serif italic text-primary">BD</span>'; }} />
           </div>
           <div className="flex flex-col gap-0.5 leading-none">
-            <span className="font-semibold text-lg">TDF</span>
+            <span className="font-semibold text-lg">Donations</span>
             <span className="text-xs text-sidebar-foreground/70">
-              Donation Dashboard
+              Analytics
             </span>
           </div>
         </div>

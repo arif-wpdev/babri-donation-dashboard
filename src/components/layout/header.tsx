@@ -26,17 +26,17 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
   const pathname = usePathname();
   const pathSegments = pathname.split("/").filter(Boolean);
 
-  let title = pathSegments[pathSegments.length - 1] || "TDF Donation Dashboard";
+  let title = pathSegments[pathSegments.length - 1] || "Donation Dashboard";
 
   if (title === "dashboard") {
-    title = "TDF Donation Dashboard";
+    title = "Donation Dashboard";
   } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "donors" && pathSegments.length === 3) {
     title = "Donor Profile";
   } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "funds" && pathSegments.length === 3) {
     title = "Fund Details";
   }
 
-  let displayTitle = title === "TDF Donation Dashboard" ? title : (title.charAt(0).toUpperCase() + title.slice(1));
+  let displayTitle = title === "Donation Dashboard" ? title : (title.charAt(0).toUpperCase() + title.slice(1));
 
   if (title === "funds") displayTitle = "Funds Overview";
   else if (title === "donors") displayTitle = "Donor Directory";
@@ -59,7 +59,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
 
         {/* Mobile Logo */}
         <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 md:hidden overflow-hidden">
-          <img src="/logo.png" alt="TDF Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-sm font-bold font-serif italic text-primary">TDF</span>'; }} />
+          <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-sm font-bold font-serif italic text-primary">BD</span>'; }} />
         </div>
 
         <div className="flex flex-col min-w-0">
