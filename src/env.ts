@@ -22,7 +22,15 @@ export const env = createEnv({
    * Client-side environment variables — safe to expose to the browser
    */
   client: {
-    NEXT_PUBLIC_APP_URL: z.string().url(),
+    /**
+     * The public base URL of this deployment, e.g. https://example.com
+     *
+     * Optional on purpose: nothing in the app reads it, and making it
+     * required meant a Vercel build failed whenever the value was missing
+     * or scoped to the wrong environment. Set it if a future feature needs
+     * an absolute URL; nothing breaks while it is absent.
+     */
+    NEXT_PUBLIC_APP_URL: z.string().url().optional(),
   },
 
   /**
