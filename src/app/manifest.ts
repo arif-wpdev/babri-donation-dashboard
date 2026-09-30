@@ -2,8 +2,8 @@ import { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Donation Dashboard',
-    short_name: 'Dashboard',
+    name: 'Babri Masjid Donation Dashboard',
+    short_name: 'Babri Donations',
     description: 'Analytics hub for TDF Donations',
     start_url: '/',
     display: 'standalone',

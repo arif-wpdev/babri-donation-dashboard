@@ -38,7 +38,7 @@ export default async function LoginPage(props: { searchParams: Promise<{ callbac
               className="h-full object-contain" 
             />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Donation Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Babri Masjid Donation Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Enter your credentials to access dashboard
           </p>

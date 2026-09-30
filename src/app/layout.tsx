@@ -19,18 +19,18 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | Donation Dashboard",
-    default: "Donation Dashboard",
+    template: "%s | Babri Masjid Donation Dashboard",
+    default: "Babri Masjid Donation Dashboard",
   },
   description:
     "Multi-tenant donation analytics platform. Track funds, donors, and donations from WooCommerce in real time.",
   keywords: ["donations", "nonprofit", "WooCommerce", "analytics", "fundraising"],
-  authors: [{ name: "Donation Dashboard" }],
+  authors: [{ name: "Babri Masjid Donation Dashboard" }],
   robots: { index: false, follow: false }, // Private SaaS — no indexing
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Donation Dashboard",
+    title: "Babri Donation",
   },
 };
 

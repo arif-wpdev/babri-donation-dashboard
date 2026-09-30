@@ -93,9 +93,9 @@ export function AppSidebar({ userRole, ...props }: React.ComponentProps<typeof S
             <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerHTML = '<span class="text-xl font-bold font-serif italic text-primary">BD</span>'; }} />
           </div>
           <div className="flex flex-col gap-0.5 leading-none">
-            <span className="font-semibold text-lg">Donations</span>
+            <span className="font-semibold text-lg">Babri Masjid</span>
             <span className="text-xs text-sidebar-foreground/70">
-              Analytics
+              Donation Dashboard
             </span>
           </div>
         </div>

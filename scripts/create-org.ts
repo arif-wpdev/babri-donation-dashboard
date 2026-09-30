@@ -24,7 +24,7 @@ const ORG = {
   name: "Babri Masjid Dhaka",
   slug: "babri-masjid-dhaka",
   // Set this to the new deployment's WordPress site before running.
-  wcBaseUrl: "https://example.com",
+  wcBaseUrl: "https://babrimasjiddhaka.com",
   // Placeholders — must start with ck_ / cs_ to satisfy validation when edited.
   wcConsumerKey: "ck_REPLACE_IN_SETTINGS",
   wcConsumerSecret: "cs_REPLACE_IN_SETTINGS",

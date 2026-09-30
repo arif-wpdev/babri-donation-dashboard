@@ -26,17 +26,17 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
   const pathname = usePathname();
   const pathSegments = pathname.split("/").filter(Boolean);
 
-  let title = pathSegments[pathSegments.length - 1] || "Donation Dashboard";
+  let title = pathSegments[pathSegments.length - 1] || "Babri Masjid Donation Dashboard";
 
   if (title === "dashboard") {
-    title = "Donation Dashboard";
+    title = "Babri Masjid Donation Dashboard";
   } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "donors" && pathSegments.length === 3) {
     title = "Donor Profile";
   } else if (pathSegments[0] === "dashboard" && pathSegments[1] === "funds" && pathSegments.length === 3) {
     title = "Fund Details";
   }
 
-  let displayTitle = title === "Donation Dashboard" ? title : (title.charAt(0).toUpperCase() + title.slice(1));
+  let displayTitle = title === "Babri Masjid Donation Dashboard" ? title : (title.charAt(0).toUpperCase() + title.slice(1));
 
   if (title === "funds") displayTitle = "Funds Overview";
   else if (title === "donors") displayTitle = "Donor Directory";

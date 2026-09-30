@@ -93,7 +93,7 @@ export function InstallPrompt() {
         </div>
         
         <div className="flex-1 text-center sm:text-left pr-6 sm:pr-0">
-          <h3 className="font-semibold text-foreground text-sm">Install Dashboard</h3>
+          <h3 className="font-semibold text-foreground text-sm">Install Babri Donations</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Add to your home screen for quick and easy access.</p>
         </div>
         
