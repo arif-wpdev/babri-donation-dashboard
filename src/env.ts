@@ -6,7 +6,13 @@ export const env = createEnv({
    * Server-side environment variables — never exposed to the browser
    */
   server: {
-    DATABASE_URL: z.string().url(),
+    /**
+     * Optional when the DB_* parts below are supplied instead. Some hosts
+     * (Vercel) corrupt percent-encoded values, so a password containing `$`
+     * or `^` can arrive mangled and Prisma reports "the provided database
+     * credentials are not valid". The DB_* path avoids URL encoding entirely.
+     */
+    DATABASE_URL: z.string().url().optional(),
     DIRECT_URL: z.string().url(),
     /**
      * Alternative to DATABASE_URL for hosts that mangle percent-encoded
