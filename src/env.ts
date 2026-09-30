@@ -8,6 +8,15 @@ export const env = createEnv({
   server: {
     DATABASE_URL: z.string().url(),
     DIRECT_URL: z.string().url(),
+    /**
+     * Alternative to DATABASE_URL for hosts that mangle percent-encoded
+     * values. Supplying these avoids putting a password with `$` or `^` in a
+     * URL at all. Used only when DATABASE_URL is absent.
+     */
+    DB_URL: z.string().optional(),
+    DB_USER: z.string().optional(),
+    DB_PASSWORD: z.string().optional(),
+    DB_NAME: z.string().optional(),
     AUTH_SECRET: z.string().min(32),
     ENCRYPTION_KEY: z.string().length(64), // 32 bytes hex-encoded
     CRON_SECRET: z.string().min(16),
@@ -39,6 +48,10 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     DIRECT_URL: process.env.DIRECT_URL,
+    DB_URL: process.env.DB_URL,
+    DB_USER: process.env.DB_USER,
+    DB_PASSWORD: process.env.DB_PASSWORD,
+    DB_NAME: process.env.DB_NAME,
     AUTH_SECRET: process.env.AUTH_SECRET,
     ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
     CRON_SECRET: process.env.CRON_SECRET,
