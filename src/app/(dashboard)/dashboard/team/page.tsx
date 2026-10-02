@@ -20,6 +20,8 @@ export default function TeamPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({ name: "", email: "", password: "" });
+  const [employeeToDelete, setEmployeeToDelete] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchUsers = async () => {
     try {
@@ -66,23 +68,27 @@ export default function TeamPage() {
     }
   };
 
-  const handleDeleteEmployee = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to remove ${name}? They will lose access immediately.`)) return;
-    
+  const handleDeleteEmployee = async () => {
+    if (!employeeToDelete || isDeleting) return;
+
+    setIsDeleting(true);
     try {
-      const res = await fetch(`/api/team/${id}`, {
+      const res = await fetch(`/api/team/${employeeToDelete.id}`, {
         method: "DELETE",
       });
-      
+
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "Failed to delete employee");
       }
-      
-      toast.success("Employee removed successfully");
-      setUsers(users.filter(u => u.id !== id));
+
+      toast.success(`${employeeToDelete.name || employeeToDelete.email} was removed`);
+      setUsers((currentUsers) => currentUsers.filter((user) => user.id !== employeeToDelete.id));
+      setEmployeeToDelete(null);
     } catch (error: any) {
       toast.error(error.message || "An error occurred");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -222,7 +228,8 @@ export default function TeamPage() {
                         variant="ghost" 
                         size="icon"
                         className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => handleDeleteEmployee(user.id, user.name)}
+                        onClick={() => setEmployeeToDelete(user)}
+                        aria-label={`Remove ${user.name || user.email}`}
                         title="Remove Employee"
                       >
                         <Trash2 className="size-4" />
@@ -235,6 +242,44 @@ export default function TeamPage() {
           </TableBody>
         </Table>
       </Card>
+
+      <Dialog
+        open={!!employeeToDelete}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setEmployeeToDelete(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove team member?</DialogTitle>
+            <DialogDescription>
+              {employeeToDelete
+                ? `${employeeToDelete.name || employeeToDelete.email} will lose access to this dashboard immediately.`
+                : "This team member will lose access to this dashboard immediately."}
+              {" "}This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEmployeeToDelete(null)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteEmployee}
+              disabled={isDeleting || !employeeToDelete}
+            >
+              {isDeleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Trash2 className="mr-2 size-4" />}
+              Remove member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

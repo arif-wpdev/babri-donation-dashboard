@@ -14,10 +14,24 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
+import pdfMake from "pdfmake/build/pdfmake";
+import pdfMakeFonts from "pdfmake/build/vfs_fonts";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
+
+async function loadBengaliPdfFont() {
+  const response = await fetch("/fonts/HindSiliguri-Regular.ttf");
+  if (!response.ok) throw new Error("Could not load Hind Siliguri font for the PDF");
+
+  const fontBytes = new Uint8Array(await response.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < fontBytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...fontBytes.subarray(offset, offset + chunkSize));
+  }
+
+  return window.btoa(binary);
+}
 
 export default function DonorsDirectoryPage() {
   const [search, setSearch] = useState("");
@@ -97,52 +111,83 @@ export default function DonorsDirectoryPage() {
         XLSX.writeFile(workbook, `Donors_Export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
       }
       else if (exportFormat === "pdf") {
-        const doc = new jsPDF("landscape", "pt", "a4");
-        
-        // Load Bengali/English combined font for PDF
-        try {
-          const fontUrl = "/fonts/HindSiliguri-Regular.ttf";
-          const fontRes = await fetch(fontUrl);
-          const fontBuffer = await fontRes.arrayBuffer();
-          const fontUint8 = new Uint8Array(fontBuffer);
-          let binary = '';
-          for (let i = 0; i < fontUint8.byteLength; i++) {
-            binary += String.fromCharCode(fontUint8[i]);
-          }
-          const base64Font = window.btoa(binary);
-          
-          doc.addFileToVFS("HindSiliguri.ttf", base64Font);
-          doc.addFont("HindSiliguri.ttf", "HindSiliguri", "normal");
-          doc.setFont("HindSiliguri");
-        } catch (e) {
-          console.error("Failed to load font", e);
-        }
+        // PDFMake/PDFKit embeds the TTF and uses fontkit's Bengali OpenType
+        // shaping. Unlike the previous canvas approach, Bengali remains vector
+        // text in the PDF and can be selected and searched.
+        const hindSiliguriFont = await loadBengaliPdfFont();
+        // pdfmake's vfs_fonts bundle exports the filename-to-base64 map
+        // directly. Some @types/pdfmake versions describe it as `{ vfs }`,
+        // which leaves Roboto absent at runtime and causes a VFS lookup error.
+        const bundledFonts = pdfMakeFonts as unknown as Record<string, string> & {
+          vfs?: Record<string, string>;
+        };
+        const fontVfs = {
+          ...(bundledFonts.vfs ?? bundledFonts),
+          "HindSiliguri-Regular.ttf": hindSiliguriFont,
+        };
+        const pdfExportData = exportData.map(({ Source: _source, ...row }: Record<string, any>, index: number) => {
+          const donor = allDonors[index];
+          const dateStr = donor?.donations?.[0]?.wcDatePaid || donor?.lastDonationAt || donor?.wcDateCreated;
 
-        doc.setFontSize(16);
-        doc.setTextColor("#0a0a0a");
-        doc.text("Donors Directory Report", 40, 40);
-        doc.setFontSize(10);
-        doc.text(`Generated on: ${format(new Date(), "MMM dd, yyyy HH:mm")}`, 40, 60);
-        
-        const headers = [Object.keys(exportData[0])];
-        const rows = exportData.map((obj: any) => Object.values(obj));
-        
-        autoTable(doc, {
-          head: headers,
-          body: rows,
-          startY: 80,
-          styles: { 
-            font: "HindSiliguri",
-            fontSize: 8,
-            textColor: "#0a0a0a" 
-          },
-          headStyles: { 
-            fillColor: [13, 71, 43],
-            textColor: "#ffffff"
-          }, // Primary brand color
+          return {
+            ...row,
+            "Last Donated": dateStr ? format(new Date(dateStr), "d MMM, yy") : "-",
+          };
         });
-        
-        doc.save(`Donors_Export_${format(new Date(), "yyyy-MM-dd")}.pdf`);
+        const pdfHeaders = Object.keys(pdfExportData[0]);
+        const pdfRows = pdfExportData.map((row: Record<string, unknown>) =>
+          Object.values(row).map((value) => {
+            const text = String(value ?? "");
+            return /[\u0980-\u09FF]/.test(text)
+              ? { text, font: "HindSiliguri" }
+              : text;
+          }),
+        );
+        const tableBody = [
+          pdfHeaders.map((text) => ({ text, style: "tableHeader" })),
+          ...pdfRows,
+        ];
+
+        pdfMake.createPdf({
+          pageOrientation: "landscape",
+          pageSize: "A4",
+          pageMargins: [40, 70, 40, 40],
+          defaultStyle: { font: "Roboto", fontSize: 8, color: "#0a0a0a" },
+          content: [
+            { text: "Donors Directory Report", fontSize: 16, margin: [0, 0, 0, 4] },
+            { text: `Generated on: ${format(new Date(), "d MMM, yy HH:mm")}`, fontSize: 10, margin: [0, 0, 0, 18] },
+            {
+              table: {
+                headerRows: 1,
+                widths: ["*", "*", "*", "auto", "auto", "*", "auto", "*"],
+                body: tableBody,
+              },
+              layout: {
+                fillColor: (rowIndex: number) => rowIndex === 0 ? "#0d472b" : rowIndex % 2 === 0 ? "#f5f5f5" : null,
+                hLineColor: () => "#e5e7eb",
+                vLineColor: () => "#e5e7eb",
+                paddingLeft: () => 5,
+                paddingRight: () => 5,
+                paddingTop: () => 4,
+                paddingBottom: () => 4,
+              },
+            },
+          ],
+          styles: {
+            tableHeader: { bold: true, color: "#ffffff" },
+          },
+        }, undefined, {
+          Roboto: {
+            normal: "Roboto-Regular.ttf",
+            bold: "Roboto-Medium.ttf",
+            italics: "Roboto-Italic.ttf",
+            bolditalics: "Roboto-MediumItalic.ttf",
+          },
+          HindSiliguri: {
+            normal: "HindSiliguri-Regular.ttf",
+            bold: "HindSiliguri-Regular.ttf",
+          },
+        }, fontVfs).download(`Donors_Export_${format(new Date(), "yyyy-MM-dd")}.pdf`);
       }
       
       toast.success(`${exportFormat.toUpperCase()} export downloaded successfully`, { id: toastId });
