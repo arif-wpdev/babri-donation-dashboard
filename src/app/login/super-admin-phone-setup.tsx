@@ -47,7 +47,7 @@ export function SuperAdminPhoneSetup() {
       const response = await fetch("/api/auth/mfa/bootstrap-phone/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, phone, otp }),
+        body: JSON.stringify({ email, password, phone: canonicalPhone, otp }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -87,7 +87,7 @@ export function SuperAdminPhoneSetup() {
         </form>
       ) : (
         <form onSubmit={verifyCode} className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">Enter the 6-digit code sent to {phone.replace(/^(.{3}).*(.{3})$/, "$1••••••$2")}.</p>
+          <p className="text-sm text-muted-foreground">Enter the 6-digit code sent to {canonicalPhone.replace(/^(.{3}).*(.{3})$/, "$1••••••$2")}.</p>
           <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-otp">SMS verification code</Label><Input id="bootstrap-admin-otp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
           <p aria-live="polite" className="text-xs text-muted-foreground">{attemptsRemaining} attempts remaining. Code expires in 5 minutes.</p>
           <Button type="submit" variant="outline" disabled={busy || otp.length !== 6 || attemptsRemaining === 0}>{busy && <Loader2 className="mr-2 size-4 animate-spin" />}Verify phone</Button>
