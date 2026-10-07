@@ -2,10 +2,10 @@ import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto"
 import { env } from "@/env";
 import { prisma } from "@/lib/prisma";
 import { sendGreenwebOtp } from "@/lib/greenweb-sms";
-import type { AuthEventType, Role } from "@prisma/client";
+import type { AuthEventType, Prisma, Role } from "@prisma/client";
 import { cookies } from "next/headers";
 import type { AuthenticatorDevice } from "@simplewebauthn/types";
-import { isActiveSessionRecord, isValidWebAuthnOriginConfig } from "@/lib/auth-session-policy";
+import { canEmployeeFallbackToOtp, isActiveSessionRecord, isMobileAppSessionLocked, isValidWebAuthnOriginConfig } from "@/lib/auth-session-policy";
 
 const otpHashSecret = () => env.AUTH_OTP_HASH_KEY || env.AUTH_SECRET;
 const rateHashSecret = () => env.AUTH_RATE_LIMIT_HMAC_KEY || env.AUTH_SECRET;
@@ -146,6 +146,27 @@ export function isCredentialTrustedForUser(input: {
     input.credentialId === input.trustedCredentialId &&
     input.credentialRevokedAt === null &&
     input.trustedDeviceRevokedAt === null;
+}
+
+export function isTrustedDeviceRecordUsable(input: {
+  exists: boolean;
+  userId: string;
+  deviceUserId: string;
+  credentialId: string;
+  trustedCredentialId: string;
+  credentialUserId: string;
+  deviceRevokedAt: Date | null;
+  credentialRevokedAt: Date | null;
+  createdAt: Date;
+  now: Date;
+}) {
+  return input.exists &&
+    input.userId === input.deviceUserId &&
+    input.userId === input.credentialUserId &&
+    input.credentialId === input.trustedCredentialId &&
+    input.deviceRevokedAt === null &&
+    input.credentialRevokedAt === null &&
+    input.createdAt.getTime() + 365 * 24 * 60 * 60_000 > input.now.getTime();
 }
 
 
@@ -313,13 +334,63 @@ export async function issuePreAuth(userId: string, deliveryChannel?: "sms", pass
   const token = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-  await prisma.loginPreAuth.create({ data: { userId, tokenHash, expiresAt, deliveryChannel, passkeyOnly } });
+  const preAuth = await prisma.loginPreAuth.create({ data: { userId, tokenHash, expiresAt, deliveryChannel, passkeyOnly }, select: { id: true, tokenHash: true } });
   (await cookies()).set(preAuthCookieName, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
     path: "/",
     maxAge: 10 * 60,
+  });
+  return preAuth;
+}
+
+export async function rotateEmployeePasskeyPreAuthToOtp(input: { userId: string; preAuthId: string; preAuthTokenHash: string }) {
+  const { randomBytes } = await import("node:crypto");
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 10 * 60_000);
+  const created = await prisma.$transaction(async (tx) => {
+    const current = await tx.loginPreAuth.findUnique({
+      where: { id: input.preAuthId },
+      include: { user: { select: { role: true, phoneVerifiedAt: true, orgId: true, org: { select: { deletedAt: true } } } } },
+    });
+    if (!current || current.userId !== input.userId || current.tokenHash !== input.preAuthTokenHash || current.consumedAt || current.expiresAt <= now || !canEmployeeFallbackToOtp({
+      role: current.user.role,
+      phoneVerifiedAt: current.user.phoneVerifiedAt,
+      organizationActive: Boolean(current.user.orgId) && !current.user.org?.deletedAt,
+      preAuthPasskeyOnly: current.passkeyOnly,
+      deliveryChannel: current.deliveryChannel,
+    })) throw new Error("Passkey fallback is no longer available");
+
+    const claimed = await tx.loginPreAuth.updateMany({ where: { id: current.id, userId: input.userId, tokenHash: input.preAuthTokenHash, consumedAt: null, expiresAt: { gt: now }, passkeyOnly: true, deliveryChannel: "sms" }, data: { consumedAt: now } });
+    if (claimed.count !== 1) throw new Error("Passkey fallback was already used");
+    const challengeKey = hashAuthValue(input.preAuthTokenHash, "passkey-auth");
+    await tx.authChallenge.updateMany({ where: { identifierHash: challengeKey, type: "PASSKEY_AUTHENTICATION", userId: input.userId, consumedAt: null }, data: { consumedAt: now } });
+    return tx.loginPreAuth.create({ data: { userId: input.userId, tokenHash, expiresAt, deliveryChannel: "sms", passkeyOnly: false }, select: { id: true } });
+  }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
+  (await cookies()).set(preAuthCookieName, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: 10 * 60,
+  });
+  return created.id;
+}
+
+export async function issueTrustedDeviceInTransaction(userId: string, credentialId: string, tx: Prisma.TransactionClient) {
+  const { randomBytes } = await import("node:crypto");
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  await tx.trustedDevice.create({ data: { userId, credentialId, tokenHash } });
+  (await cookies()).set(trustedDeviceCookieName, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 365 * 24 * 60 * 60,
   });
 }
 
@@ -338,20 +409,6 @@ export async function clearPreAuth() {
   (await cookies()).delete(preAuthCookieName);
 }
 
-export async function issueTrustedDevice(userId: string, credentialId: string) {
-  const { randomBytes } = await import("node:crypto");
-  const token = randomBytes(32).toString("base64url");
-  const tokenHash = createHash("sha256").update(token).digest("hex");
-  await prisma.trustedDevice.create({ data: { userId, credentialId, tokenHash } });
-  (await cookies()).set(trustedDeviceCookieName, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 365 * 24 * 60 * 60,
-  });
-}
-
 export async function getTrustedDeviceCredential(userId: string) {
   const token = (await cookies()).get(trustedDeviceCookieName)?.value;
   if (!token) return null;
@@ -359,16 +416,69 @@ export async function getTrustedDeviceCredential(userId: string) {
     where: { tokenHash: createHash("sha256").update(token).digest("hex") },
     include: { credential: true },
   });
-  if (!device || device.userId !== userId || device.revokedAt || device.credential.revokedAt) return null;
+  if (!isTrustedDeviceRecordUsable({
+    exists: Boolean(device),
+    userId,
+    deviceUserId: device?.userId ?? "",
+    credentialId: device?.credentialId ?? "",
+    trustedCredentialId: device?.credential.credentialId ?? "",
+    credentialUserId: device?.credential.userId ?? "",
+    deviceRevokedAt: device?.revokedAt ?? null,
+    credentialRevokedAt: device?.credential.revokedAt ?? null,
+    createdAt: device?.createdAt ?? new Date(0),
+    now: new Date(),
+  })) return null;
   return device;
+}
+
+export async function getTrustedDeviceCredentialForLogin(userId: string) {
+  const token = (await cookies()).get(trustedDeviceCookieName)?.value;
+  if (!token) return null;
+  const device = await prisma.trustedDevice.findUnique({
+    where: { tokenHash: createHash("sha256").update(token).digest("hex") },
+    include: { credential: true },
+  });
+  if (isTrustedDeviceRecordUsable({
+    exists: Boolean(device),
+    userId,
+    deviceUserId: device?.userId ?? "",
+    credentialId: device?.credentialId ?? "",
+    trustedCredentialId: device?.credential.credentialId ?? "",
+    credentialUserId: device?.credential.userId ?? "",
+    deviceRevokedAt: device?.revokedAt ?? null,
+    credentialRevokedAt: device?.credential.revokedAt ?? null,
+    createdAt: device?.createdAt ?? new Date(0),
+    now: new Date(),
+  })) return device;
+  if (device && device.userId === userId) await clearTrustedDevice();
+  return null;
 }
 
 export async function clearTrustedDevice() {
   (await cookies()).delete(trustedDeviceCookieName);
 }
 
+export async function trustedDeviceTokenHash() {
+  const token = (await cookies()).get(trustedDeviceCookieName)?.value;
+  return token ? createHash("sha256").update(token).digest("hex") : null;
+}
+
 export async function deleteCookie(name: string) {
   (await cookies()).delete(name);
+}
+
+export class MobileAppSessionLockedError extends Error {
+  constructor() {
+    super("Mobile app session is locked");
+    this.name = "MobileAppSessionLockedError";
+  }
+}
+
+export class MobileAppSessionUnlockRequiredError extends Error {
+  constructor() {
+    super("Mobile app session requires unlock");
+    this.name = "MobileAppSessionUnlockRequiredError";
+  }
 }
 
 export type StrongSessionUser = {
@@ -393,13 +503,23 @@ export async function requireStrongSession(user: StrongSessionUser) {
   }
   if (env.AUTH_MFA_ENABLED === "true" && !user.mfaVerifiedAt) throw new Error("Unauthorized");
   const [record, account] = await Promise.all([
-    prisma.authSession.findUnique({ where: { id: user.authSessionId }, select: { userId: true, expiresAt: true, revokedAt: true } }),
+    prisma.authSession.findUnique({ where: { id: user.authSessionId }, select: { userId: true, expiresAt: true, revokedAt: true, lastUsedAt: true, mobileLockEnabled: true } }),
     prisma.user.findUnique({ where: { id: user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, org: { select: { slug: true, deletedAt: true } } } }),
   ]);
-  if (!isActiveSessionRecord(record, user.id, new Date())) throw new Error("Unauthorized");
+  if (!record || !isActiveSessionRecord(record, user.id, new Date())) throw new Error("Unauthorized");
   if (!account || account.org?.deletedAt) throw new Error("Unauthorized");
   if (account.role !== user.role || account.orgId !== user.orgId) throw new Error("Unauthorized");
-  await prisma.authSession.update({ where: { id: user.authSessionId }, data: { lastUsedAt: new Date() } });
+  const now = new Date();
+  if (isMobileAppSessionLocked({ role: account.role, lockEnabled: record.mobileLockEnabled, lastUsedAt: record.lastUsedAt, now })) throw new MobileAppSessionLockedError();
+  if (!record.mobileLockEnabled) {
+    const touch = await prisma.authSession.updateMany({ where: { id: user.authSessionId, userId: user.id, revokedAt: null, expiresAt: { gt: now }, mobileLockEnabled: false, lastUsedAt: record.lastUsedAt }, data: { lastUsedAt: now } });
+    if (touch.count !== 1) {
+      const latest = await prisma.authSession.findUnique({ where: { id: user.authSessionId }, select: { userId: true, expiresAt: true, revokedAt: true, lastUsedAt: true, mobileLockEnabled: true } });
+      if (!latest || !isActiveSessionRecord(latest, user.id, new Date())) throw new Error("Unauthorized");
+      if (isMobileAppSessionLocked({ role: account.role, lockEnabled: latest.mobileLockEnabled, lastUsedAt: latest.lastUsedAt, now: new Date() })) throw new MobileAppSessionLockedError();
+      throw new Error("Session state changed; retry the request");
+    }
+  }
   return { ...user, name: account.name, email: account.email, role: account.role, orgId: account.orgId, orgSlug: account.org?.slug ?? null };
 }
 

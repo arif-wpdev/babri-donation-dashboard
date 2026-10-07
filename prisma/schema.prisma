@@ -225,6 +225,7 @@ model AuthSession {
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt  DateTime
+  mobileLockEnabled Boolean @default(false)
   revokedAt  DateTime?
   createdAt  DateTime @default(now())
   lastUsedAt DateTime @default(now())

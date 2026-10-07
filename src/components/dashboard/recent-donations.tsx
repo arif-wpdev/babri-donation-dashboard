@@ -7,10 +7,23 @@ import { useDonations } from "@/hooks/use-donations";
 import { format, formatDistanceToNow, differenceInHours } from "date-fns";
 import Link from "next/link";
 
+type RecentDonation = {
+  id: string;
+  total: number | string;
+  wcDatePaid: string | null;
+  wcDateCreated: string | null;
+  billingSnapshot: Record<string, string | null> | null;
+  utmSource: string | null;
+  utmCampaign: string | null;
+  donor: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
+  fund: { name: string } | null;
+};
+
 export function RecentDonations() {
   const { data, isLoading } = useDonations({
     page: 1,
     limit: 10,
+    summary: false,
   });
 
   return (
@@ -50,7 +63,7 @@ export function RecentDonations() {
                   </TableRow>
                 ))
               ) : data?.data?.length > 0 ? (
-                data.data.map((donation: any) => {
+                (data.data as RecentDonation[]).map((donation) => {
                   const billing = donation.billingSnapshot || {};
                   const firstName = donation.donor?.firstName || billing.first_name || billing.firstName || "";
                   const lastName = donation.donor?.lastName || billing.last_name || billing.lastName || "";

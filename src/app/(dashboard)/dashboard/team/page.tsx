@@ -19,7 +19,7 @@ export default function TeamPage() {
   
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
-  const [formData, setFormData] = useState({ name: "", phone: "", password: "" });
+  const [formData, setFormData] = useState({ name: "", phone: "" });
   const [employeeToDelete, setEmployeeToDelete] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -59,7 +59,7 @@ export default function TeamPage() {
       
       toast.success("Employee account created successfully");
       setIsAddOpen(false);
-      setFormData({ name: "", phone: "", password: "" });
+      setFormData({ name: "", phone: "" });
       fetchUsers();
     } catch (error: any) {
       toast.error(error.message || "An error occurred");
@@ -111,7 +111,7 @@ export default function TeamPage() {
               <DialogHeader>
                 <DialogTitle>Add New Employee</DialogTitle>
                 <DialogDescription>
-                  Create an account for a team member to access the dashboard.
+                    Register the employee’s name and mobile number.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -136,19 +136,6 @@ export default function TeamPage() {
                     onChange={(e) => setFormData({...formData, phone: e.target.value})}
                     required
                   />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input 
-                    id="password" 
-                    type="password" 
-                    placeholder="••••••••" 
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    required
-                    minLength={12}
-                  />
-                  <p className="text-xs text-muted-foreground">Use 12+ characters with uppercase, lowercase and a number.</p>
                 </div>
               </div>
               <DialogFooter>

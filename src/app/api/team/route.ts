@@ -1,22 +1,14 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { isPhoneOnlyEmployeeInviteAllowed } from "@/lib/auth-session-policy";
+import { normalizeBangladeshMobile } from "@/lib/bangladesh-phone";
 
 const createEmployeeSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().trim().min(2).max(100),
   phone: z.string().min(8).max(24),
-  password: z.string().min(12).max(256).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/),
-});
-
-function normalizeBangladeshPhone(input: string) {
-  const value = input.trim().replace(/[\s().-]/g, "");
-  if (/^01[3-9]\d{8}$/.test(value)) return `+88${value}`;
-  if (/^8801[3-9]\d{8}$/.test(value)) return `+${value}`;
-  if (/^\+8801[3-9]\d{8}$/.test(value)) return value;
-  return null;
-}
+}).strict();
 
 /**
  * GET /api/team
@@ -108,8 +100,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, password } = parsed.data;
-    const phone = normalizeBangladeshPhone(parsed.data.phone);
+    const { name } = parsed.data;
+    const phone = normalizeBangladeshMobile(parsed.data.phone);
     if (!phone) return Response.json({ error: "Enter a valid Bangladeshi mobile number." }, { status: 400 });
 
     // Phone numbers, not email addresses, identify team login accounts.
@@ -117,32 +109,40 @@ export async function POST(request: NextRequest) {
       where: { phone },
       select: { id: true },
     });
-    if (existing) {
-      return Response.json({ error: "An account with this phone number already exists." }, { status: 409 });
+    if (!isPhoneOnlyEmployeeInviteAllowed({ role: user.role, phoneAlreadyRegistered: Boolean(existing) })) {
+      if (existing) return Response.json({ error: "An account with this phone number already exists." }, { status: 409 });
+      throw new ApiError("Forbidden", 403);
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
-    // The legacy Auth.js schema requires email. This reserved placeholder is
-    // internal only; the UI and all sign-in flows use the verified phone.
+    // Auth.js still requires a unique email column. Use an internal reserved
+    // placeholder; employee-facing UI and authentication use phone only.
     const internalEmail = `phone-${phone.replace(/\D/g, "")}@phone.invalid`;
-
-    const newUser = await prisma.user.create({
-      data: {
-        name,
-        email: internalEmail,
-        phone,
-        passwordHash,
-        role: "ORG_USER",
-        orgId,
-      },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        role: true,
-        createdAt: true,
-      },
-    });
+    let newUser;
+    try {
+      newUser = await prisma.user.create({
+        data: {
+          name,
+          email: internalEmail,
+          phone,
+          phoneVerifiedAt: null,
+          passwordHash: null,
+          role: "ORG_USER",
+          orgId,
+        },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          role: true,
+          createdAt: true,
+        },
+      });
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+        return Response.json({ error: "An account with this phone number already exists." }, { status: 409 });
+      }
+      throw error;
+    }
 
     return Response.json({ data: newUser }, { status: 201 });
   } catch (error) {

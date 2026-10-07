@@ -2,7 +2,7 @@ import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/types";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import { ensureSameOrigin, hashAuthValue, isWebAuthnConfigurationReady, issueTrustedDevice, isPasskeyChallengeUsable, requestIp, webAuthnConfiguration, writeSecurityEvent } from "@/lib/auth-security";
+import { ensureSameOrigin, hashAuthValue, isWebAuthnConfigurationReady, issueTrustedDeviceInTransaction, isPasskeyChallengeUsable, requestIp, webAuthnConfiguration, writeSecurityEvent } from "@/lib/auth-security";
 
 const schema = (body: unknown): body is { response: RegistrationResponseJSON; deviceName?: string } => Boolean(body && typeof body === "object" && "response" in body && body.response && typeof body.response === "object" && "id" in body.response && typeof body.response.id === "string" && body.response.id.length <= 4096);
 
@@ -28,8 +28,10 @@ export async function POST(request: Request) {
     const publicKey = Buffer.from(info.credentialPublicKey).toString("base64url");
     const deviceName = typeof body.deviceName === "string" ? body.deviceName.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 100) : "Passkey";
     await prisma.$transaction(async (tx) => {
-      const claimed = await tx.authChallenge.updateMany({ where: { id: challenge.id, challenge: activeChallenge, consumedAt: null, otpExpiresAt: { gt: now } }, data: { consumedAt: now } });
+      const claimed = await tx.authChallenge.updateMany({ where: { id: challenge.id, userId: user.id, challenge: activeChallenge, consumedAt: null, otpExpiresAt: { gt: now } }, data: { consumedAt: now } });
       if (claimed.count !== 1) throw new Error("Registration challenge already consumed");
+      const activeCredentials = await tx.webAuthnCredential.count({ where: { userId: user.id, revokedAt: null } });
+      if (user.role === "ORG_USER" && activeCredentials > 0) throw new Error("Employee already has a passkey");
       await tx.webAuthnCredential.create({
         data: {
           userId: user.id,
@@ -43,9 +45,9 @@ export async function POST(request: Request) {
           credentialDeviceId: credentialId,
         },
       });
-    }, { isolationLevel: "Serializable" });
+      await issueTrustedDeviceInTransaction(user.id, credentialId, tx);
+    }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 10_000 });
     await writeSecurityEvent({ userId: user.id, eventType: "PASSKEY_REGISTERED", ip: requestIp(request.headers), userAgent: request.headers.get("user-agent"), details: { credentialDeviceType: info.credentialDeviceType, backedUp: info.credentialBackedUp } });
-    await issueTrustedDevice(user.id, credentialId);
     return Response.json({ success: true });
   } catch (error) {
     if (error instanceof ApiError) return Response.json({ error: error.message }, { status: error.statusCode });

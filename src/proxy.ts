@@ -43,14 +43,22 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
       || pathname === "/api/auth/mfa/bootstrap-phone/verify"
       || pathname === "/api/auth/mfa/employee-phone/request"
       || pathname === "/api/auth/mfa/employee-phone/verify"
+      || pathname === "/api/auth/mfa/employee-phone/passkey-options"
+      || pathname === "/api/auth/mfa/employee-phone/passkey-verify"
       || pathname === "/api/auth/mfa/otp/request"
       || pathname === "/api/auth/mfa/otp/verify"
       || pathname === "/api/auth/mfa/passkey/login-options"
       || pathname === "/api/auth/mfa/passkey/login-verify"
+      || pathname === "/api/auth/mfa/passkey/fallback"
+      || pathname === "/api/auth/mfa/admin-migration"
       || pathname === "/api/auth/mfa/recovery/verify"
       || pathname === "/api/auth/mfa/password-reset/request"
       || pathname === "/api/auth/mfa/password-reset/verify"
       || pathname === "/api/auth/mfa/session";
+    if (pathname.startsWith("/api/auth/mfa/mobile-lock/")) {
+      if (!isStrongAuthenticated) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.next();
+    }
     if (!pathname.startsWith("/api/auth/mfa/") || isMfaBootstrap || isStrongAuthenticated) return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { clearPreAuth, ensureSameOrigin, enforceRateLimits, getPreAuthUser, hashAuthValue, isMfaConfigurationReady, isOtpChallengeUsable, nextOtpFailure, prefersMobileAuthFlow, requestIp, verifyOtpHash, writeSecurityEvent } from "@/lib/auth-security";
+import { ensureSameOrigin, enforceRateLimits, getPreAuthUser, hashAuthValue, isMfaConfigurationReady, isOtpChallengeUsable, nextOtpFailure, prefersMobileAuthFlow, requestIp, verifyOtpHash, writeSecurityEvent } from "@/lib/auth-security";
+import { canEmployeeFallbackToOtp, isRegisteredEmployeeOtpDestination } from "@/lib/auth-session-policy";
 
 const MAX_ATTEMPTS = 3;
 const LOCK_MS = 24 * 60 * 60_000;
@@ -11,8 +12,18 @@ export async function POST(request: Request) {
     if (!isMfaConfigurationReady()) return Response.json({ error: "Verification is temporarily unavailable." }, { status: 503 });
     const preAuth = await getPreAuthUser();
     if (!preAuth) return Response.json({ error: "Sign-in attempt expired. Enter your password again." }, { status: 401 });
-    if (preAuth.preAuth.passkeyOnly) return Response.json({ error: "This trusted device requires its registered passkey." }, { status: 403 });
+    const organization = preAuth.user.orgId ? await prisma.organization.findUnique({ where: { id: preAuth.user.orgId }, select: { deletedAt: true } }) : null;
+    const organizationActive = preAuth.user.role === "SUPER_ADMIN" || (Boolean(preAuth.user.orgId) && Boolean(organization) && !organization?.deletedAt);
+    if (!organizationActive) return Response.json({ error: "Sign-in attempt expired. Restart sign-in." }, { status: 401 });
+    if (preAuth.preAuth.passkeyOnly) {
+      if (!canEmployeeFallbackToOtp({ role: preAuth.user.role, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive, preAuthPasskeyOnly: true, deliveryChannel: preAuth.preAuth.deliveryChannel })) {
+        return Response.json({ error: "This trusted device requires its registered passkey." }, { status: 403 });
+      }
+    }
     if (preAuth.preAuth.deliveryChannel === "sms" && !preAuth.user.phoneVerifiedAt) return Response.json({ error: "Verification is temporarily unavailable." }, { status: 401 });
+    if (preAuth.user.role === "ORG_USER" && !isRegisteredEmployeeOtpDestination({ role: preAuth.user.role, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, registeredPhone: preAuth.user.phone, destination: preAuth.user.phone })) {
+      return Response.json({ error: "Verification is temporarily unavailable." }, { status: 401 });
+    }
     const body = await request.json().catch(() => null) as { otp?: unknown } | null;
     if (!body || typeof body.otp !== "string" || !/^\d{6}$/.test(body.otp)) return Response.json({ error: "Enter the six-digit verification code." }, { status: 400 });
     const ip = requestIp(request.headers);
@@ -38,11 +49,11 @@ export async function POST(request: Request) {
     if (!verified) {
       const failedResult = await prisma.$transaction(async (tx) => {
         const current = await tx.authChallenge.findUnique({ where: { id: challenge.id } });
-        if (!current || current.otpHash !== activeOtpHash || current.consumedAt || !current.otpExpiresAt || current.otpExpiresAt <= now || current.lockedUntil && current.lockedUntil > now) return null;
+        if (!current || current.userId !== preAuth.user.id || current.otpHash !== activeOtpHash || current.consumedAt || !current.otpExpiresAt || current.otpExpiresAt <= now || current.lockedUntil && current.lockedUntil > now) return null;
         const failure = nextOtpFailure(current.failedAttempts, now, MAX_ATTEMPTS, LOCK_MS);
         const failedAttempts = failure.attempts;
         const lockedUntil = failure.lockedUntil ?? undefined;
-        const updated = await tx.authChallenge.updateMany({ where: { id: current.id, failedAttempts: current.failedAttempts, otpHash: activeOtpHash, consumedAt: null, lockedUntil: current.lockedUntil }, data: { failedAttempts, ...(lockedUntil && { lockedUntil, otpHash: null, loginTicketHash: null, loginTicketExpiresAt: null }) } });
+        const updated = await tx.authChallenge.updateMany({ where: { id: current.id, userId: preAuth.user.id, failedAttempts: current.failedAttempts, otpHash: activeOtpHash, consumedAt: null, lockedUntil: current.lockedUntil }, data: { failedAttempts, ...(lockedUntil && { lockedUntil, otpHash: null, loginTicketHash: null, loginTicketExpiresAt: null }) } });
         return updated.count === 1 ? { failedAttempts, lockedUntil } : null;
       }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
       if (!failedResult) return Response.json({ error: "Verification state changed. Try the current code again." }, { status: 409 });
@@ -59,21 +70,23 @@ export async function POST(request: Request) {
     const ticketHash = createHash("sha256").update(ticket).digest("hex");
     const consumed = await prisma.$transaction(async (tx) => {
       const currentChallenge = await tx.authChallenge.findUnique({ where: { id: challenge.id } });
-      if (!currentChallenge || currentChallenge.failedAttempts >= MAX_ATTEMPTS || currentChallenge.lockedUntil && currentChallenge.lockedUntil > now) return false;
-      const currentPreAuth = await tx.loginPreAuth.findUnique({ where: { id: preAuth.preAuth.id }, select: { userId: true, passkeyOnly: true, consumedAt: true, expiresAt: true } });
-      if (!currentPreAuth || currentPreAuth.userId !== preAuth.user.id || currentPreAuth.passkeyOnly || currentPreAuth.consumedAt || currentPreAuth.expiresAt <= now) return false;
+      if (!currentChallenge || currentChallenge.userId !== preAuth.user.id || currentChallenge.failedAttempts >= MAX_ATTEMPTS || currentChallenge.lockedUntil && currentChallenge.lockedUntil > now) return false;
+      const currentPreAuth = await tx.loginPreAuth.findUnique({ where: { id: preAuth.preAuth.id }, select: { userId: true, tokenHash: true, deliveryChannel: true, passkeyOnly: true, consumedAt: true, expiresAt: true } });
+      const employeeFallback = canEmployeeFallbackToOtp({ role: preAuth.user.role, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive: Boolean(preAuth.user.orgId), preAuthPasskeyOnly: currentPreAuth?.passkeyOnly ?? false, deliveryChannel: preAuth.preAuth.deliveryChannel });
+      if (!currentPreAuth || currentPreAuth.userId !== preAuth.user.id || currentPreAuth.tokenHash !== preAuth.preAuth.tokenHash || currentPreAuth.deliveryChannel !== "sms" || currentPreAuth.consumedAt || currentPreAuth.expiresAt <= now || (currentPreAuth.passkeyOnly && !employeeFallback) || currentPreAuth.passkeyOnly !== preAuth.preAuth.passkeyOnly) return false;
       const claimed = await tx.authChallenge.updateMany({
-        where: { id: challenge.id, otpHash: activeOtpHash, consumedAt: null, otpExpiresAt: { gt: now }, lockedUntil: null, failedAttempts: { lt: MAX_ATTEMPTS } },
+        where: { id: challenge.id, userId: preAuth.user.id, otpHash: activeOtpHash, consumedAt: null, otpExpiresAt: { gt: now }, lockedUntil: null, failedAttempts: { lt: MAX_ATTEMPTS } },
         data: { consumedAt: now, verifiedAt: now, otpHash: null },
       });
       if (claimed.count !== 1) return false;
-      const preAuthConsumed = await tx.loginPreAuth.updateMany({ where: { id: preAuth.preAuth.id, consumedAt: null, expiresAt: { gt: now }, passkeyOnly: false }, data: { consumedAt: now } });
+      const preAuthConsumed = await tx.loginPreAuth.updateMany({ where: { id: preAuth.preAuth.id, consumedAt: null, expiresAt: { gt: now }, passkeyOnly: preAuth.preAuth.passkeyOnly }, data: { consumedAt: now } });
       if (preAuthConsumed.count !== 1) throw new Error("Pre-authentication state already consumed");
       await tx.loginTicket.create({ data: { userId: preAuth.user.id, preauthId: preAuth.preAuth.id, tokenHash: ticketHash, expiresAt: new Date(now.getTime() + 2 * 60_000) } });
       return true;
     }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
     if (!consumed) return Response.json({ error: "This code has already been used. Request a new code." }, { status: 409 });
-    const offerPasskeyRegistration = prefersMobileAuthFlow(request.headers);
+    const hasActivePasskey = await prisma.webAuthnCredential.findFirst({ where: { userId: preAuth.user.id, revokedAt: null }, select: { id: true } });
+    const offerPasskeyRegistration = preAuth.user.role === "ORG_USER" || (prefersMobileAuthFlow(request.headers) && !hasActivePasskey);
     await writeSecurityEvent({ userId: preAuth.user.id, eventType: "NEW_DEVICE", ip, userAgent: request.headers.get("user-agent"), details: { method: "otp_verified", passkeyOffered: offerPasskeyRegistration } });
     return Response.json({ success: true, loginTicket: ticket, expiresInSeconds: 120, offerPasskeyRegistration });
   } catch {

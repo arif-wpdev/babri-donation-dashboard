@@ -61,6 +61,24 @@ export async function GET(request: NextRequest) {
     }
 
     const { page, limit, status, fundId, donorId, from, to } = parsed.data;
+    const summaryOnly = searchParams.get("summary") === "false";
+    const donationSelect = {
+      id: true,
+      wcOrderId: true,
+      status: true,
+      currency: true,
+      total: true,
+      paymentMethodTitle: true,
+      transactionId: true,
+      wcDatePaid: true,
+      wcDateCreated: true,
+      billingSnapshot: true,
+      utmSource: true,
+      utmMedium: true,
+      utmCampaign: true,
+      donor: { select: { id: true, firstName: true, lastName: true, email: true } },
+      fund: { select: { id: true, name: true, slug: true } },
+    } satisfies Prisma.DonationSelect;
 
     const where: Prisma.DonationWhereInput = {
       orgId, // ← always scoped
@@ -77,45 +95,19 @@ export async function GET(request: NextRequest) {
         : {}),
     };
 
+    const donationsPromise = prisma.donation.findMany({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { wcDateCreated: "desc" },
+      select: donationSelect,
+    });
     const [donations, total] = await Promise.all([
-      prisma.donation.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { wcDateCreated: "desc" },
-        select: {
-          id: true,
-          wcOrderId: true,
-          status: true,
-          currency: true,
-          total: true,
-          paymentMethodTitle: true,
-          transactionId: true,
-          wcDatePaid: true,
-          wcDateCreated: true,
-          billingSnapshot: true,
-          utmSource: true,
-          utmMedium: true,
-          utmCampaign: true,
-          donor: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-            },
-          },
-          fund: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-        },
-      }),
-      prisma.donation.count({ where }),
+      donationsPromise,
+      summaryOnly ? Promise.resolve(0) : prisma.donation.count({ where }),
     ]);
+
+    if (summaryOnly) return Response.json({ data: donations });
 
     // ── Summary stats for the current filter ─────────────────────────────────
     const [summary, uniqueDonorsQuery] = await Promise.all([

@@ -19,10 +19,10 @@ export async function POST(request: Request) {
     if (!rate.allowed) return Response.json({ success: true, message: "If the account is eligible, a reset code will be sent." });
     if (!/^\+[1-9]\d{7,14}$/.test(identifier)) return Response.json({ success: true, message: "If the account is eligible, a reset code will be sent." });
     const user = await prisma.user.findFirst({
-      where: { phone: identifier, phoneVerifiedAt: { not: null }, org: { deletedAt: null } },
-      select: { id: true, phone: true },
+      where: { phone: identifier, phoneVerifiedAt: { not: null }, OR: [{ orgId: null }, { org: { deletedAt: null } }] },
+      select: { id: true, phone: true, role: true, passwordHash: true },
     });
-    if (user) {
+    if (user && (user.role === "SUPER_ADMIN" || user.passwordHash !== null)) {
       const channel = "sms" as const;
       const destination = user.phone;
       if (destination) {

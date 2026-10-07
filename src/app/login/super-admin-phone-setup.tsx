@@ -69,10 +69,10 @@ export function SuperAdminPhoneSetup() {
     <section className="mt-6 w-full border-t pt-5" aria-labelledby="admin-phone-setup-title">
       <div className="mb-3 flex items-center gap-2">
         <Phone className="size-4 text-primary" />
-        <h2 id="admin-phone-setup-title" className="text-sm font-semibold">Super Admin: verify sign-in phone</h2>
+        <h2 id="admin-phone-setup-title" className="text-sm font-semibold">Admin: verify sign-in phone</h2>
       </div>
       <p className="mb-4 text-xs text-muted-foreground">
-        One-time setup for an unverified Super Admin account. Email is used only to identify the admin for this setup; future sign-in uses phone number.
+        One-time setup for an existing Super Admin or Org Admin without a verified phone. Account email and current password are used to prove account ownership; future verification uses the registered phone.
       </p>
 
       {error && <p role="alert" className="mb-3 rounded-lg border border-destructive/20 bg-destructive/5 p-2 text-sm text-destructive">{error}</p>}
@@ -80,7 +80,7 @@ export function SuperAdminPhoneSetup() {
         <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"><ShieldCheck className="mr-2 inline size-4" />Phone verified. Use it in the sign-in form above.</div>
       ) : step === "credentials" ? (
         <form onSubmit={requestCode} className="flex flex-col gap-3">
-          <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-email">Super Admin account email</Label><Input id="bootstrap-admin-email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></div>
+          <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-email">Account email</Label><Input id="bootstrap-admin-email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></div>
           <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-password">Account password</Label><Input id="bootstrap-admin-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></div>
           <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-phone">Phone to verify</Label><Input id="bootstrap-admin-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="015XXXXXXXX" required value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
           <Button type="submit" variant="outline" disabled={busy || !/^\+[1-9]\d{7,14}$/.test(canonicalPhone)}>{busy && <Loader2 className="mr-2 size-4 animate-spin" />}Send verification code</Button>

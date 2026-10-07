@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     if (!trustedDevice) return Response.json({ error: "This device is not trusted. Use the OTP flow instead." }, { status: 403 });
     const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash: challengeKey, type: "PASSKEY_AUTHENTICATION" } } });
     const now = new Date();
-    if (!isPasskeyChallengeUsable(challenge, preAuth.user.id, now)) return Response.json({ error: "Passkey request expired" }, { status: 400 });
+    if (!isPasskeyChallengeUsable(challenge, preAuth.user.id, now) || challenge?.purpose !== trustedDevice.credentialId) return Response.json({ error: "Passkey request expired" }, { status: 400 });
     if (!challenge?.challenge) return Response.json({ error: "Passkey request expired" }, { status: 400 });
     const activeChallenge = challenge.challenge;
     const credential = await prisma.webAuthnCredential.findUnique({ where: { credentialId: body.response.id } });
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       trustedCredentialId: trustedDevice.credential.credentialId,
       credentialRevokedAt: credential.revokedAt,
       trustedDeviceRevokedAt: trustedDevice.revokedAt,
-    }) || trustedDevice.credential.revokedAt) return Response.json({ error: "This passkey is not available for this device." }, { status: 401 });
+    }) || trustedDevice.credential.revokedAt || trustedDevice.credential.userId !== preAuth.user.id || trustedDevice.credential.credentialId !== trustedDevice.credentialId) return Response.json({ error: "This passkey is not available for this device." }, { status: 401 });
     const { origin, rpID } = webAuthnConfiguration(request);
     const verification = await verifyAuthenticationResponse({
       response: body.response,
@@ -51,9 +51,9 @@ export async function POST(request: Request) {
     const counter = BigInt(verification.authenticationInfo.newCounter);
     const ticket = randomBytes(32).toString("base64url");
     await prisma.$transaction(async (tx) => {
-      const currentPreAuth = await tx.loginPreAuth.findUnique({ where: { id: preAuth.preAuth.id }, select: { userId: true, passkeyOnly: true, expiresAt: true, consumedAt: true } });
-      if (!currentPreAuth || currentPreAuth.userId !== preAuth.user.id || !currentPreAuth.passkeyOnly || currentPreAuth.consumedAt || currentPreAuth.expiresAt <= now) throw new Error("Pre-authentication state changed");
-      const claimed = await tx.authChallenge.updateMany({ where: { id: challenge.id, challenge: activeChallenge, consumedAt: null, otpExpiresAt: { gt: now } }, data: { consumedAt: now } });
+      const currentPreAuth = await tx.loginPreAuth.findUnique({ where: { id: preAuth.preAuth.id }, select: { userId: true, passkeyOnly: true, deliveryChannel: true, tokenHash: true, expiresAt: true, consumedAt: true } });
+      if (!currentPreAuth || currentPreAuth.userId !== preAuth.user.id || !currentPreAuth.passkeyOnly || currentPreAuth.deliveryChannel !== "sms" || currentPreAuth.tokenHash !== preAuth.preAuth.tokenHash || currentPreAuth.consumedAt || currentPreAuth.expiresAt <= now) throw new Error("Pre-authentication state changed");
+      const claimed = await tx.authChallenge.updateMany({ where: { id: challenge.id, userId: preAuth.user.id, purpose: credential.credentialId, challenge: activeChallenge, consumedAt: null, otpExpiresAt: { gt: now } }, data: { consumedAt: now } });
       if (claimed.count !== 1) throw new Error("Challenge already consumed");
       const currentCredential = await tx.webAuthnCredential.findUnique({ where: { id: credential.id }, select: { userId: true, revokedAt: true, counter: true } });
       if (!currentCredential || currentCredential.userId !== preAuth.user.id || currentCredential.revokedAt || currentCredential.counter !== credential.counter) throw new Error("Credential changed during verification");

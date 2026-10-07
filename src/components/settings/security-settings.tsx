@@ -17,6 +17,7 @@ export function SecuritySettings() {
   const [pending, setPending] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordlessAccount, setPasswordlessAccount] = useState(false);
   const [phone, setPhone] = useState("");
   const [phoneOtp, setPhoneOtp] = useState("");
   const [phoneResendIn, setPhoneResendIn] = useState(0);
@@ -29,6 +30,9 @@ export function SecuritySettings() {
     const result = await response.json();
     setDevices(result.devices);
     setSessions(result.sessions);
+    setPhoneVerified(Boolean(result.phoneVerified));
+    setPhone(result.phone || "");
+    setPasswordlessAccount(result.passwordless === true);
   };
 
   useEffect(() => {
@@ -39,7 +43,7 @@ export function SecuritySettings() {
         if (!response.ok) throw new Error("Could not load security devices");
         return response.json();
       })
-      .then((result) => { if (active) { setDevices(result.devices); setSessions(result.sessions); setPhoneVerified(Boolean(result.phoneVerified)); setPhone(result.phone || ""); } })
+      .then((result) => { if (active) { setDevices(result.devices); setSessions(result.sessions); setPhoneVerified(Boolean(result.phoneVerified)); setPhone(result.phone || ""); setPasswordlessAccount(result.passwordless === true); } })
       .catch((error: unknown) => { if (active && !(error instanceof DOMException && error.name === "AbortError")) toast.error("Could not load security settings"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; controller.abort(); };
@@ -168,8 +172,8 @@ export function SecuritySettings() {
       <Card>
         <CardHeader><CardTitle>Recovery codes</CardTitle><CardDescription>Generate one-time codes for account recovery. They are stored as hashes and displayed only once.</CardDescription></CardHeader>
         <CardContent className="space-y-3">
-          <input type="password" autoComplete="current-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm your password" className="h-10 w-full rounded-md border bg-background px-3 text-sm sm:max-w-sm" />
-          <Button variant="outline" disabled={!confirmPassword || pending} onClick={() => void generateRecoveryCodes().catch((error) => toast.error(error.message))}>Generate new recovery codes</Button>
+          {!passwordlessAccount && <input type="password" autoComplete="current-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm your password" className="h-10 w-full rounded-md border bg-background px-3 text-sm sm:max-w-sm" />}
+          <Button variant="outline" disabled={(!passwordlessAccount && !confirmPassword) || pending || (passwordlessAccount && (!phoneVerified || devices.every((device) => device.revokedAt)))} onClick={() => void generateRecoveryCodes().catch((error) => toast.error(error.message))}>Generate new recovery codes</Button>
           {recoveryCodes.length > 0 && <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/30 p-4 font-mono text-sm">{recoveryCodes.map((code) => <code key={code}>{code}</code>)}</div>}
           {recoveryCodes.length > 0 && <Button variant="outline" onClick={() => void copyRecoveryCodes().catch(() => toast.error("Could not copy codes"))}>Copy codes</Button>}
           {recoveryCodes.length > 0 && <Button variant="outline" onClick={downloadRecoveryCodes}>Download codes</Button>}

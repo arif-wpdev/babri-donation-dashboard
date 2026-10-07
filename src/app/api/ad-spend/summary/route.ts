@@ -5,7 +5,6 @@ import { adLedgerQuerySchema } from "@/lib/validations/schemas";
 import {
   AD_SPEND_CURRENCY,
   dateOnlyInTimeZone,
-  ensureAdSpendWriter,
   nextDateOnly,
   parseDateOnly,
   resolveAdSpendOrgId,
@@ -43,6 +42,13 @@ export async function GET(request: NextRequest) {
       ? { entryDate: { ...(periodFrom && { gte: periodFrom }), ...(periodTo && { lt: nextDateOnly(periodTo) }) } }
       : {};
 
+    const periodEntriesQuery = from || to
+      ? prisma.adLedgerEntry.findMany({
+          where: { orgId, status: "POSTED", currency: AD_SPEND_CURRENCY, ...dateWhere },
+          orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
+          select: { type: true, amount: true, entryDate: true },
+        })
+      : Promise.resolve([] as Array<{ type: "TOP_UP" | "SPEND"; amount: Prisma.Decimal; entryDate: Date }>);
     const [postedTotals, todaySpend, periodEntries, recentEntries] = await Promise.all([
       prisma.adLedgerEntry.groupBy({
         by: ["type"],
@@ -59,11 +65,7 @@ export async function GET(request: NextRequest) {
         },
         _sum: { amount: true },
       }),
-      prisma.adLedgerEntry.findMany({
-        where: { orgId, status: "POSTED", currency: AD_SPEND_CURRENCY, ...dateWhere },
-        orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
-        select: { type: true, amount: true, entryDate: true },
-      }),
+      periodEntriesQuery,
       prisma.adLedgerEntry.findMany({
         where: { orgId, currency: AD_SPEND_CURRENCY },
         orderBy: [{ entryDate: "desc" }, { createdAt: "desc" }],
@@ -89,14 +91,16 @@ export async function GET(request: NextRequest) {
 
     const topUps = money(postedTotals.find((item) => item.type === "TOP_UP")?._sum.amount);
     const totalSpend = money(postedTotals.find((item) => item.type === "SPEND")?._sum.amount);
-    const periodTotals = periodEntries.reduce(
-      (totals, entry) => {
-        if (entry.type === "TOP_UP") totals.topUps += money(entry.amount);
-        else totals.spend += money(entry.amount);
-        return totals;
-      },
-      { topUps: 0, spend: 0 },
-    );
+    const periodTotals = from || to
+      ? periodEntries.reduce(
+          (totals, entry) => {
+            if (entry.type === "TOP_UP") totals.topUps += money(entry.amount);
+            else totals.spend += money(entry.amount);
+            return totals;
+          },
+          { topUps: 0, spend: 0 },
+        )
+      : { topUps, spend: totalSpend };
     const dailyTotals = new Map<string, { topUp: number; spend: number }>();
     for (const entry of periodEntries) {
       const day = dateOnlyInTimeZone(entry.entryDate, "UTC");

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import { subMonths, startOfMonth, format } from "date-fns";
+import { startOfMonth } from "date-fns";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
     const tzParam = searchParams.get("tz") || "Asia/Dhaka";
+    const includeAttribution = searchParams.get("attribution") === "1";
     let fromDate: Date | undefined;
     let toDate: Date | undefined;
 
@@ -62,12 +63,9 @@ export async function GET(request: NextRequest) {
     };
 
     // 1. Total KPIs (in range)
-    const rangeDonationsCount = await prisma.donation.count({ 
-      where: { orgId, status: "COMPLETED", ...rangeWhere } 
-    });
-    
     const rangeRaisedAggr = await prisma.donation.aggregate({
       where: { orgId, status: "COMPLETED", ...rangeWhere },
+      _count: { _all: true },
       _sum: { total: true },
       _avg: { total: true },
       _max: { total: true },
@@ -80,54 +78,24 @@ export async function GET(request: NextRequest) {
     // Total Donors (in range)
     // We count unique wcCustomerId (or email/phone if guest) for donations in this range
     // Since prisma doesn't have distinct count easily, we can use groupBy or just query donors who have donations in this range.
-    const donorsInRange = await prisma.donor.count({
-      where: {
-        orgId,
-        donations: {
-          some: { status: "COMPLETED", ...rangeWhere }
-        }
-      }
-    });
-    
-    const totalDonors = donorsInRange;
-
-    // Repeat Donors: Donors who donated in this range AND have >1 total orders
-    const repeatDonorsCount = await prisma.donor.count({
-      where: {
-        orgId,
-        ordersCount: { gt: 1 },
-        donations: {
-          some: { status: "COMPLETED", ...rangeWhere }
-        }
-      }
-    });
-
-    // Today's Donation (always fixed to today)
+    // Run independent donor and KPI aggregations together to avoid serial DB round-trips.
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
     
-    const todayAggr = await prisma.donation.aggregate({
-      where: { 
-        orgId, 
-        status: "COMPLETED",
-        wcDatePaid: { gte: startOfToday, lte: endOfToday } 
-      },
-      _sum: { total: true },
-    });
-    const todayRaised = Number(todayAggr._sum.total || 0);
-
-    // This Month's Donation (always fixed to this calendar month)
     const startOfThisMonth = startOfMonth(new Date());
-    const thisMonthAggr = await prisma.donation.aggregate({
-      where: { 
-        orgId, 
-        status: "COMPLETED",
-        wcDatePaid: { gte: startOfThisMonth } 
-      },
-      _sum: { total: true },
-    });
+    const [donorsInRange, repeatDonorsCount, todayAggr, thisMonthAggr, trendDonations, fundGroups, donationsForFunds] = await Promise.all([
+      prisma.donor.count({ where: { orgId, donations: { some: { status: "COMPLETED", ...rangeWhere } } } }),
+      prisma.donor.count({ where: { orgId, ordersCount: { gt: 1 }, donations: { some: { status: "COMPLETED", ...rangeWhere } } } }),
+      prisma.donation.aggregate({ where: { orgId, status: "COMPLETED", wcDatePaid: { gte: startOfToday, lte: endOfToday } }, _sum: { total: true } }),
+      prisma.donation.aggregate({ where: { orgId, status: "COMPLETED", wcDatePaid: { gte: startOfThisMonth } }, _sum: { total: true } }),
+      prisma.donation.findMany({ where: { orgId, status: "COMPLETED", ...rangeWhere }, select: { total: true, wcDatePaid: true }, orderBy: { wcDatePaid: "asc" } }),
+      prisma.donation.groupBy({ by: ["fundId"], where: { orgId, status: "COMPLETED", ...rangeWhere }, _sum: { total: true } }),
+      prisma.donation.findMany({ where: { orgId, status: "COMPLETED", ...rangeWhere }, select: { fundId: true, donorId: true, fund: { select: { name: true } } } }),
+    ]);
+    const totalDonors = donorsInRange;
+    const todayRaised = Number(todayAggr._sum.total || 0);
     const thisMonthRaised = Number(thisMonthAggr._sum.total || 0);
 
     // 2. Trend Data (based on range)
@@ -158,19 +126,6 @@ export async function GET(request: NextRequest) {
 
     // Default to last 30 days if no range provided, for the trend chart?
     // The user might pass "All time" which means no fromDate.
-    const trendDonations = await prisma.donation.findMany({
-      where: {
-        orgId,
-        status: "COMPLETED",
-        ...rangeWhere
-      },
-      select: {
-        total: true,
-        wcDatePaid: true,
-      },
-      orderBy: { wcDatePaid: "asc" },
-    });
-
     const hourFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, hour: "numeric", hour12: true });
     const dateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, month: "short", day: "numeric" });
     const monthFormatter = new Intl.DateTimeFormat("en-US", { timeZone: tzParam, month: "short", year: "numeric" });
@@ -199,24 +154,6 @@ export async function GET(request: NextRequest) {
 
     // 3. Fund Breakdown (in range)
     // We group donations by fundId in the selected range
-    const fundGroups = await prisma.donation.groupBy({
-      by: ['fundId'],
-      where: { orgId, status: "COMPLETED", ...rangeWhere },
-      _sum: { total: true },
-    });
-
-    // We also need donor counts per fund in this range.
-    // groupBy doesn't support distinct count of donorId natively with relation fields in an easy way, 
-    // so we can fetch all donations in range with fund and donorId and calculate in memory (fine for thousands, maybe slow for millions).
-    const donationsForFunds = await prisma.donation.findMany({
-      where: { orgId, status: "COMPLETED", ...rangeWhere },
-      select: {
-        fundId: true,
-        donorId: true,
-        fund: { select: { name: true } },
-      }
-    });
-
     const fundMap = new Map<string, { name: string, amount: number, uniqueDonors: Set<string> }>();
     
     // Initialize map with grouped sums
@@ -249,7 +186,7 @@ export async function GET(request: NextRequest) {
 
     // Actual donation attribution. Blank/missing UTM values are grouped as Direct/Unattributed;
     // this is donation revenue attribution, not ad-platform spend.
-    const [sourceGroups, campaignGroups] = await Promise.all([
+    const [sourceGroups, campaignGroups] = includeAttribution ? await Promise.all([
       prisma.donation.groupBy({
         by: ["utmSource"],
         where: completedDonationWhere,
@@ -264,7 +201,7 @@ export async function GET(request: NextRequest) {
         _sum: { total: true },
         orderBy: { _sum: { total: "desc" } },
       }),
-    ]);
+    ]) : [[], []];
 
     // Only query platform IDs that fit the schema's Int columns; other numeric
     // UTM campaign labels remain visible as their original IDs.
@@ -314,7 +251,7 @@ export async function GET(request: NextRequest) {
         totalRaised,
         todayRaised,
         thisMonthRaised,
-        totalDonations: rangeDonationsCount,
+        totalDonations: rangeRaisedAggr._count._all,
         totalDonors,
         repeatDonors: repeatDonorsCount,
         averageDonation,

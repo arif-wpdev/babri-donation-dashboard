@@ -20,10 +20,10 @@ export async function POST(request: Request) {
     ]);
     if (!rate.allowed) return Response.json({ error: "Password recovery is temporarily unavailable." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
     const user = await prisma.user.findFirst({
-      where: { phone: identifier, phoneVerifiedAt: { not: null }, org: { deletedAt: null } },
-      select: { id: true },
+      where: { phone: identifier, phoneVerifiedAt: { not: null }, OR: [{ orgId: null }, { org: { deletedAt: null } }] },
+      select: { id: true, role: true, passwordHash: true },
     });
-    if (!user) return Response.json({ error: "Invalid or expired reset code." }, { status: 400 });
+    if (!user || (user.role !== "SUPER_ADMIN" && user.passwordHash === null)) return Response.json({ error: "Invalid or expired reset code." }, { status: 400 });
     const identifierHash = hashAuthValue(user.id, "password-reset");
     const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "PASSWORD_RESET" } } });
     const now = new Date();

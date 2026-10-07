@@ -18,18 +18,17 @@ export interface DashboardStats {
   campaignReport: Array<{ campaign: string; source: string; donations: number; volume: number }>;
 }
 
-export function useDashboardStats(dateRange?: DateRange | null) {
+export function useDashboardStats(dateRange?: DateRange | null, includeAttribution = false) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Dhaka";
+  const dateKey = (date: Date | undefined) => date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` : null;
   return useQuery<DashboardStats>({
-    queryKey: ["dashboard-stats", dateRange?.from?.toISOString(), dateRange?.to?.toISOString()],
+    queryKey: ["dashboard-stats", dateKey(dateRange?.from), dateKey(dateRange?.to), timeZone, includeAttribution],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (dateRange?.from) params.append("from", dateRange.from.toISOString());
       if (dateRange?.to) params.append("to", dateRange.to.toISOString());
-      try {
-        params.append("tz", Intl.DateTimeFormat().resolvedOptions().timeZone);
-      } catch (e) {
-        params.append("tz", "Asia/Dhaka");
-      }
+      params.append("tz", timeZone);
+      if (includeAttribution) params.set("attribution", "1");
 
       const res = await fetch(`/api/dashboard/stats?${params.toString()}`);
       if (!res.ok) {

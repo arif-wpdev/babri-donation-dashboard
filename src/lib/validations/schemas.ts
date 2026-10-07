@@ -41,19 +41,20 @@ export type UpdateOrgInput = z.infer<typeof updateOrgSchema>;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const createOrgAdminSchema = z.object({
-  name: z.string().min(2).max(100),
-  email: z.string().email(),
-  password: z
-    .string()
-    .min(12, "Password must be at least 12 characters")
-    .max(256, "Password must be at most 256 characters")
-    .regex(/[A-Z]/, "Must contain an uppercase letter")
-    .regex(/[a-z]/, "Must contain a lowercase letter")
-    .regex(/[0-9]/, "Must contain a number"),
+  name: z.string().trim().min(2).max(100),
+  phone: z.string().trim().min(8).max(24),
   orgId: z.string().cuid("Invalid organization ID"),
-});
+}).strict();
 
 export type CreateOrgAdminInput = z.infer<typeof createOrgAdminSchema>;
+
+export const createPhoneOrgAdminSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  phone: z.string().trim().min(8).max(24),
+  orgId: z.string().cuid("Invalid organization ID"),
+}).strict();
+
+export type CreatePhoneOrgAdminInput = z.infer<typeof createPhoneOrgAdminSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pagination / Query Schemas

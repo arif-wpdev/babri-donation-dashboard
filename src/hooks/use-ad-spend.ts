@@ -64,10 +64,11 @@ async function fetchSummary(range?: DateRange | null): Promise<AdSpendSummary> {
   return response.json();
 }
 
-export function useAdSpend(range?: DateRange | null) {
+export function useAdSpend(range?: DateRange | null, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["ad-spend-summary", range?.from?.toISOString() ?? null, range?.to?.toISOString() ?? null],
     queryFn: () => fetchSummary(range),
+    enabled: options?.enabled ?? true,
     refetchInterval: 5 * 60 * 1000,
   });
 }

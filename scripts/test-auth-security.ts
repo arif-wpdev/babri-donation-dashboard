@@ -12,6 +12,7 @@ void Promise.all([
 	import("../src/lib/auth-session-policy"),
 	import("../src/lib/greenweb-sms"),
 	import("../src/lib/donor-date-filter"),
+	import("../src/lib/bangladesh-phone"),
 ]).then(([{
 	verifyOtpHash,
 	hashAuthValue,
@@ -23,14 +24,47 @@ void Promise.all([
 	OTP_LOCK_DURATION_MS,
 	getOtpRequestBlock,
 	isOtpChallengeUsable,
-	isWebAuthnConfigurationReady,
 	nextOtpFailure,
 	evaluateRateLimit,
 	isPasskeyChallengeUsable,
 	isCredentialTrustedForUser,
+	isTrustedDeviceRecordUsable,
 	prefersMobileAuthFlow,
-sanitizeSecurityEventDetails,
-	}, { isStrongAuthSession, isActiveSessionRecord, isLoginTicketCurrent, clearExpiredOtpLock, canBootstrapSuperAdminPhone, canBootstrapEmployeePhone, isValidWebAuthnOriginConfig }, { isGreenwebSmsAccepted }, { getDonorDonationDateBounds, matchesPeriodDonationFilters }]) => {
+	sanitizeSecurityEventDetails,
+	}, {
+		isStrongAuthSession,
+		isActiveSessionRecord,
+		isMobileAppSessionIdle,
+		isMobileAppSessionLocked,
+		mobileAppLockTimestamp,
+		canUnlockMobileAppWithOtp,
+		canUnlockMobileAppWithPasskey,
+		isLoginTicketCurrent,
+		clearExpiredOtpLock,
+		canBootstrapSuperAdminPhone,
+		canBootstrapEmployeePhone,
+		canBootstrapPasswordAdminPhone,
+		canCreatePhoneOnlyOrgAdmin,
+		canContinueLegacyAdminLogin,
+		canMigrateOrgAdminToPasswordless,
+		canGenerateAccountRecoveryCodes,
+		canOrgAdminAccessOrganization,
+		canLoginWithPassword,
+		canCompletePasswordlessAdminEnrollment,
+		isPhonePasswordlessFirstPasskeyEligible,
+		isLegacyPhoneAccountMigrationEligible,
+		canEmployeeReceiveSession,
+		canEmployeeCompleteFirstPasskey,
+		canRequestEmployeeEnrollmentOtp,
+		chooseEmployeeLoginFactor,
+		canEmployeeFallbackToOtp,
+		isRegisteredEmployeeOtpDestination,
+		isEmployeeEnrollmentHandoff,
+		isEmployeeFirstPasskeyTicket,
+		isPhoneOnlyEmployeeInviteAllowed,
+		isPasswordlessEmployeeInvite,
+		isValidWebAuthnOriginConfig,
+	}, { isGreenwebSmsAccepted }, { getDonorDonationDateBounds, matchesPeriodDonationFilters }, { normalizeBangladeshMobile }]) => {
 	const otp = randomOtp();
 	assert.match(otp, /^\d{6}$/);
 	assert.equal(verifyOtpHash(hashAuthValue(otp, "otp"), otp), true);
@@ -48,6 +82,19 @@ sanitizeSecurityEventDetails,
 	assert.notEqual(hashAuthValue("same-value", "account"), hashAuthValue("same-value", "ip"));
 
 	const now = new Date("2026-10-07T12:00:00.000Z");
+	assert.equal(isMobileAppSessionIdle(new Date(now.getTime() - 5 * 60_000 + 1), now), false, "mobile session remains unlocked until five full minutes inactive");
+	assert.equal(isMobileAppSessionIdle(new Date(now.getTime() - 5 * 60_000), now), true, "mobile session locks at five minutes idle");
+	assert.equal(isMobileAppSessionLocked({ role: "ORG_USER", lockEnabled: true, lastUsedAt: new Date(now.getTime() - 5 * 60_000), now }), true, "protected employee API guard denies requests while the mobile session is idle-locked");
+	assert.equal(isMobileAppSessionLocked({ role: "ORG_USER", lockEnabled: true, lastUsedAt: now, now }), false, "protected employee API guard allows a recently unlocked session");
+	assert.equal(isMobileAppSessionLocked({ role: "ORG_ADMIN", lockEnabled: true, lastUsedAt: new Date(now.getTime() - 6 * 60_000), now }), false, "mobile employee lock does not affect administrators");
+	assert.equal(mobileAppLockTimestamp(now).getTime(), now.getTime() - 5 * 60_000, "explicit app background can mark the session immediately idle");
+	const idleUnlockState = { role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, currentSessionId: "session-1", suppliedSessionId: "session-1", sessionMobileLockEnabled: true, sessionRevokedAt: null, sessionExpiresAt: new Date(now.getTime() + 60_000), lastUsedAt: new Date(now.getTime() - 5 * 60_000), now };
+	assert.equal(canUnlockMobileAppWithOtp(idleUnlockState), true, "OTP can unlock the current active idle employee session");
+	assert.equal(canUnlockMobileAppWithOtp({ ...idleUnlockState, suppliedSessionId: "session-2" }), false, "OTP unlock cannot be transferred to another session");
+	assert.equal(canUnlockMobileAppWithOtp({ ...idleUnlockState, sessionRevokedAt: now }), false, "revoked session cannot be unlocked");
+	assert.equal(canUnlockMobileAppWithOtp({ ...idleUnlockState, lastUsedAt: new Date(now.getTime() - 30_000) }), false, "OTP cannot be used to replace a still-active session");
+	assert.equal(canUnlockMobileAppWithPasskey({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, sessionId: "session-1", sessionUserId: "session-1", sessionMobileLockEnabled: true, sessionRevokedAt: null, sessionExpiresAt: new Date(now.getTime() + 60_000), lastUsedAt: new Date(now.getTime() - 5 * 60_000), now }), true, "passkey can unlock the current active idle employee session");
+	assert.equal(canUnlockMobileAppWithPasskey({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, sessionId: "session-1", sessionUserId: "session-1", sessionMobileLockEnabled: true, sessionRevokedAt: null, sessionExpiresAt: new Date(now.getTime() + 60_000), lastUsedAt: now, now }), false, "passkey unlock endpoint only operates on a locked session");
 	assert.equal(OTP_VALIDITY_MS, 5 * 60_000);
 	assert.equal(OTP_RESEND_INTERVAL_MS, 60_000);
 	assert.equal(OTP_MAX_FAILED_ATTEMPTS, 3);
@@ -117,9 +164,28 @@ sanitizeSecurityEventDetails,
 	assert.equal(isCredentialTrustedForUser({ ...credentialBinding, trustedDeviceRevokedAt: now }), false, "revoked trusted-device record must not authenticate");
 	assert.equal(isCredentialTrustedForUser({ ...credentialBinding, credentialUserId: "user-2" }), false, "credential ownership must match pre-auth user");
 	assert.equal(isCredentialTrustedForUser({ ...credentialBinding, trustedCredentialId: "credential-2" }), false, "credential ID must match the trusted device binding");
+	const trustedRecord = { exists: true, userId: "user-1", deviceUserId: "user-1", credentialId: "credential-1", trustedCredentialId: "credential-1", credentialUserId: "user-1", deviceRevokedAt: null, credentialRevokedAt: null, createdAt: now, now };
+	assert.equal(isTrustedDeviceRecordUsable(trustedRecord), true, "valid trusted device permits passkey-first mobile login");
+	assert.equal(isTrustedDeviceRecordUsable({ ...trustedRecord, exists: false }), false, "new OTP-authenticated device is not trusted without an explicit passkey registration record");
+	assert.equal(isTrustedDeviceRecordUsable({ ...trustedRecord, credentialRevokedAt: now }), false, "revoked passkey cannot be trusted for sign-in");
+	assert.equal(isTrustedDeviceRecordUsable({ ...trustedRecord, deviceUserId: "user-2" }), false, "trusted device record cannot be transferred to a different user");
+	assert.equal(isTrustedDeviceRecordUsable({ ...trustedRecord, createdAt: new Date(now.getTime() - 366 * 24 * 60 * 60_000) }), false, "expired trust record must not select passkey-first login");
 	assert.equal(prefersMobileAuthFlow(new Headers({ "sec-ch-ua-mobile": "?1" })), true, "mobile client hint should select the mobile auth UX");
 	assert.equal(prefersMobileAuthFlow(new Headers({ "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1" })), true, "iOS Safari should select mobile UX without client hints");
 	assert.equal(prefersMobileAuthFlow(new Headers({ "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36" })), false, "desktop browser should not be classified as mobile by UX hint");
+	assert.equal(chooseEmployeeLoginFactor({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), "passkey", "trusted active passkey on mobile selects passkey-first login");
+	assert.equal(chooseEmployeeLoginFactor({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: true, mobile: false }), "otp", "desktop always uses phone OTP even when this account has a trusted mobile");
+	assert.equal(chooseEmployeeLoginFactor({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: false, mobile: true }), "otp", "new or untrusted device must use phone OTP");
+	assert.equal(chooseEmployeeLoginFactor({ role: "ORG_USER", phoneVerifiedAt: null, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), null, "unverified employee cannot start returning-device sign-in");
+	assert.equal(chooseEmployeeLoginFactor({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: false, hasTrustedActivePasskey: true, mobile: true }), null, "employee from a deleted organization cannot sign in");
+	assert.equal(chooseEmployeeLoginFactor({ role: "SUPER_ADMIN", phoneVerifiedAt: null, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), "admin", "Super Admin factor selection remains separate");
+	assert.equal(isRegisteredEmployeeOtpDestination({ role: "ORG_USER", phoneVerifiedAt: now, registeredPhone: "+8801521434555", destination: "+8801521434555" }), true, "employee OTP must target the verified registered phone");
+	assert.equal(isRegisteredEmployeeOtpDestination({ role: "ORG_USER", phoneVerifiedAt: now, registeredPhone: "+8801521434555", destination: "+8801812345678" }), false, "employee OTP cannot target a different supplied number");
+	assert.equal(isRegisteredEmployeeOtpDestination({ role: "ORG_USER", phoneVerifiedAt: null, registeredPhone: "+8801521434555", destination: "+8801521434555" }), false, "unverified number is not a valid returning-login destination");
+	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), true, "active employee can explicitly fall back from trusted passkey to registered-phone OTP");
+	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: false, deliveryChannel: "sms" }), false, "OTP fallback cannot be invoked from an already-OTP login attempt");
+	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_ADMIN", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), true, "passwordless Org Admin can fall back from mobile passkey to their registered-phone OTP");
+	assert.equal(canEmployeeFallbackToOtp({ role: "SUPER_ADMIN", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), false, "Super Admin's separate authentication flow is not changed");
 
 	assert.equal(isStrongAuthSession(null, true), false, "missing session must not be authenticated");
 	assert.equal(isStrongAuthSession({ authSessionId: null, mfaVerifiedAt: null }, true), false, "password-only JWT must fail when MFA is enabled");
@@ -144,6 +210,67 @@ sanitizeSecurityEventDetails,
 	assert.equal(canBootstrapEmployeePhone({ role: "ORG_ADMIN", passwordHash: "bcrypt-hash", phoneVerifiedAt: null }), false, "admins cannot use employee phone bootstrap");
 	assert.equal(canBootstrapEmployeePhone({ role: "ORG_USER", passwordHash: null, phoneVerifiedAt: null }), false, "passwordless employee cannot use employee phone bootstrap");
 	assert.equal(canBootstrapEmployeePhone({ role: "ORG_USER", passwordHash: "bcrypt-hash", phoneVerifiedAt: now }), false, "already verified employee cannot replace phone through bootstrap");
+	assert.equal(canBootstrapPasswordAdminPhone({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: null, organizationActive: true }), true, "active legacy Org Admin may verify a first phone without losing password access");
+	assert.equal(canBootstrapPasswordAdminPhone({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: null, organizationActive: false }), false, "Org Admin from inactive/deleted org cannot bootstrap phone");
+	assert.equal(canCreatePhoneOnlyOrgAdmin({ actorRole: "SUPER_ADMIN", organizationActive: true, phoneAlreadyRegistered: false, authReady: true }), true, "Super Admin may provision a phone-only Org Admin when factors are ready");
+	assert.equal(canCreatePhoneOnlyOrgAdmin({ actorRole: "ORG_ADMIN", organizationActive: true, phoneAlreadyRegistered: false, authReady: true }), false, "Org Admin cannot provision another Org Admin");
+	assert.equal(canCreatePhoneOnlyOrgAdmin({ actorRole: "SUPER_ADMIN", organizationActive: true, phoneAlreadyRegistered: false, authReady: false }), false, "do not create a phone-only admin when OTP/passkey configuration is unavailable");
+	assert.equal(canContinueLegacyAdminLogin({ role: "ORG_ADMIN", passwordHash: "legacy-hash", organizationActive: true }), true, "legacy Org Admin remains able to use existing password login before migration");
+	assert.equal(canContinueLegacyAdminLogin({ role: "ORG_ADMIN", passwordHash: null, organizationActive: true }), false, "passwordless Org Admin cannot fall back to password login");
+	assert.equal(isLegacyPhoneAccountMigrationEligible({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: now }), true, "legacy Admin with verified phone may prepare migration");
+	assert.equal(canMigrateOrgAdminToPasswordless({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: now, organizationActive: true, hasActivePasskey: true, suppliedPasswordValid: true, authenticationReady: true }), true, "migration requires legacy password, verified phone, passkey and full auth readiness");
+	assert.equal(canMigrateOrgAdminToPasswordless({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: null, organizationActive: true, hasActivePasskey: true, suppliedPasswordValid: true, authenticationReady: true }), false, "migration before phone verification is rejected");
+	assert.equal(canMigrateOrgAdminToPasswordless({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: now, organizationActive: true, hasActivePasskey: false, suppliedPasswordValid: true, authenticationReady: true }), false, "migration before passkey registration is rejected");
+	assert.equal(canMigrateOrgAdminToPasswordless({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: now, organizationActive: true, hasActivePasskey: true, suppliedPasswordValid: true, authenticationReady: false }), false, "migration is held until passwordless auth fully configured");
+	assert.equal(canOrgAdminAccessOrganization({ role: "ORG_ADMIN", userOrganizationId: "org-1", organizationId: "org-1", organizationActive: true }), true, "legacy and migrated Admin retain own-org access");
+	assert.equal(canOrgAdminAccessOrganization({ role: "ORG_ADMIN", userOrganizationId: "org-1", organizationId: "org-2", organizationActive: true }), false, "Org Admin access cannot cross organization boundary");
+	assert.equal(canOrgAdminAccessOrganization({ role: "ORG_ADMIN", userOrganizationId: "org-1", organizationId: "org-1", organizationActive: false }), false, "deleted organization access is rejected");
+	assert.equal(canLoginWithPassword({ role: "SUPER_ADMIN", passwordHash: "admin-hash", phoneVerifiedAt: null }), true, "Super Admin remains password-secured");
+	assert.equal(canLoginWithPassword({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: now }), true, "legacy Org Admin keeps password flow until explicit migration");
+	assert.equal(canLoginWithPassword({ role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: now }), false, "new or migrated Org Admin uses phone OTP/passkey, not password");
+	assert.equal(canGenerateAccountRecoveryCodes({ role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: true }), true, "passwordless Admin can generate recovery codes with active verified factors");
+	assert.equal(canGenerateAccountRecoveryCodes({ role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: false }), false, "passwordless Admin cannot generate recovery codes before passkey setup");
+	assert.equal(canBootstrapPasswordAdminPhone({ role: "SUPER_ADMIN", passwordHash: "super-hash", phoneVerifiedAt: null, organizationActive: true }), true, "Super Admin phone bootstrap remains valid");
+	assert.equal(canBootstrapPasswordAdminPhone({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: null, organizationActive: true }), true, "legacy Org Admin can verify a phone and keep current password until explicit migration");
+	assert.equal(canBootstrapPasswordAdminPhone({ role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: null, organizationActive: true }), false, "new passwordless Org Admin must use invite OTP flow, not password-account bootstrap");
+	assert.equal(canBootstrapPasswordAdminPhone({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: null, organizationActive: false }), false, "deleted-organization legacy admin cannot recover/bootstrap phone");
+	assert.equal(isPhonePasswordlessFirstPasskeyEligible({ role: "ORG_ADMIN", phoneVerifiedAt: null, passwordHash: null, organizationActive: true, hasActivePasskey: false, enrollmentMarker: "employee-enrollment", passkeyOnly: true, enrollmentConsumedAt: null, enrollmentExpiresAt: new Date(now.getTime() + 60_000), now }), true, "new phone-only Org Admin invite may enroll through OTP and first passkey");
+	assert.equal(isPhonePasswordlessFirstPasskeyEligible({ role: "ORG_ADMIN", phoneVerifiedAt: null, passwordHash: "legacy-hash", organizationActive: true, hasActivePasskey: false, enrollmentMarker: "employee-enrollment", passkeyOnly: true, enrollmentConsumedAt: null, enrollmentExpiresAt: new Date(now.getTime() + 60_000), now }), false, "legacy password-backed Org Admin cannot use the new-account invite flow");
+	const adminEnrollment = { role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: now, orgActive: true, enrollmentMarker: "employee-enrollment", passkeyOnly: true, enrollmentConsumedAt: now, enrollmentExpiresAt: new Date(now.getTime() + 60_000), hasActivePasskey: true, now };
+	assert.equal(canCompletePasswordlessAdminEnrollment(adminEnrollment), true, "phone-provisioned Admin completes first-passkey onboarding successfully");
+	assert.equal(canCompletePasswordlessAdminEnrollment({ ...adminEnrollment, passwordHash: "legacy-hash" }), false, "legacy password account cannot consume phone-only invite enrollment");
+	assert.equal(canCompletePasswordlessAdminEnrollment({ ...adminEnrollment, orgActive: false }), false, "phone-only Admin enrollment cannot grant a session for a deleted organization");
+	assert.equal(canCompletePasswordlessAdminEnrollment({ ...adminEnrollment, hasActivePasskey: false }), false, "phone-only Admin enrollment cannot complete without first passkey");
+	assert.equal(canEmployeeReceiveSession({ role: "ORG_USER", phoneVerifiedAt: null }), false, "unverified employee cannot receive an authenticated session");
+	assert.equal(canEmployeeReceiveSession({ role: "ORG_USER", phoneVerifiedAt: now }), true, "verified employee may receive a session after successful factor completion");
+	assert.equal(canEmployeeReceiveSession({ role: "SUPER_ADMIN", phoneVerifiedAt: null }), true, "Super Admin retains the separate secure login policy");
+	assert.equal(canRequestEmployeeEnrollmentOtp({ role: "ORG_USER", phoneVerifiedAt: null, passwordHash: null, hasActivePasskey: false, organizationActive: true }), true, "passwordless, unverified employee invite may begin onboarding");
+	assert.equal(canRequestEmployeeEnrollmentOtp({ role: "ORG_USER", phoneVerifiedAt: now, passwordHash: null, hasActivePasskey: false, organizationActive: true }), false, "already verified legacy employee cannot use first-invite onboarding");
+	assert.equal(canRequestEmployeeEnrollmentOtp({ role: "ORG_USER", phoneVerifiedAt: null, passwordHash: "hash", hasActivePasskey: false, organizationActive: true }), false, "password-backed employee cannot use first-invite onboarding");
+	assert.equal(canEmployeeCompleteFirstPasskey({ role: "ORG_USER", phoneVerifiedAt: null, enrollmentMarker: "employee-enrollment", passkeyOnly: true, enrollmentConsumedAt: null, enrollmentExpiresAt: new Date(now.getTime() + 60_000), now }), true, "valid OTP enrollment state may register the mandatory first passkey before phone verification is committed");
+	assert.equal(canEmployeeCompleteFirstPasskey({ role: "ORG_USER", phoneVerifiedAt: now, enrollmentMarker: "employee-enrollment", passkeyOnly: true, enrollmentConsumedAt: null, enrollmentExpiresAt: new Date(now.getTime() + 60_000), now }), false, "verified accounts cannot reuse first-time enrollment");
+	assert.equal(canEmployeeCompleteFirstPasskey({ role: "ORG_USER", phoneVerifiedAt: null, enrollmentMarker: "employee-enrollment", passkeyOnly: true, enrollmentConsumedAt: now, enrollmentExpiresAt: new Date(now.getTime() + 60_000), now }), false, "consumed enrollment state cannot be reused");
+	assert.equal(canEmployeeCompleteFirstPasskey({ role: "ORG_USER", phoneVerifiedAt: null, enrollmentMarker: "employee-enrollment", passkeyOnly: true, enrollmentConsumedAt: null, enrollmentExpiresAt: now, now }), false, "expired enrollment state cannot register a passkey");
+	assert.equal(canEmployeeCompleteFirstPasskey({ role: "ORG_USER", phoneVerifiedAt: null, enrollmentMarker: "other", passkeyOnly: true, enrollmentConsumedAt: null, enrollmentExpiresAt: new Date(now.getTime() + 60_000), now }), false, "non-enrollment pre-auth cannot be used to register the first employee passkey");
+	assert.equal(isEmployeeEnrollmentHandoff({ hasOnboardingTicket: true, hasLoginTicket: false, onboardingTicketLength: 43 }), "onboarding", "valid one-time onboarding ticket selects enrollment handoff");
+	assert.equal(isEmployeeEnrollmentHandoff({ hasOnboardingTicket: false, hasLoginTicket: true }), "login", "login ticket selects standard MFA handoff");
+	assert.equal(isEmployeeEnrollmentHandoff({ hasOnboardingTicket: true, hasLoginTicket: true, onboardingTicketLength: 43 }), null, "ambiguous dual-ticket handoff is rejected");
+	assert.equal(isEmployeeEnrollmentHandoff({ hasOnboardingTicket: true, hasLoginTicket: false, onboardingTicketLength: 12 }), null, "short onboarding ticket is rejected");
+	assert.equal(isEmployeeFirstPasskeyTicket({ role: "ORG_USER", phoneVerifiedAt: now, preAuthMarker: "employee-enrollment", passkeyOnly: true, preAuthConsumedAt: now, preAuthExpiresAt: new Date(now.getTime() + 60_000), now }), true, "first-passkey ticket may finalize the verified employee session");
+	assert.equal(isEmployeeFirstPasskeyTicket({ role: "ORG_USER", phoneVerifiedAt: null, preAuthMarker: "employee-enrollment", passkeyOnly: true, preAuthConsumedAt: now, preAuthExpiresAt: new Date(now.getTime() + 60_000), now }), false, "employee session handoff cannot finalize before phone verification commit");
+	assert.equal(isEmployeeFirstPasskeyTicket({ role: "ORG_USER", phoneVerifiedAt: now, preAuthMarker: "employee-enrollment", passkeyOnly: false, preAuthConsumedAt: now, preAuthExpiresAt: new Date(now.getTime() + 60_000), now }), false, "first-passkey ticket must be passkey-only");
+	assert.equal(isPhoneOnlyEmployeeInviteAllowed({ role: "ORG_ADMIN", phoneAlreadyRegistered: false }), true, "organization admin may invite a new phone-only employee");
+	assert.equal(isPhoneOnlyEmployeeInviteAllowed({ role: "SUPER_ADMIN", phoneAlreadyRegistered: false }), true, "super admin may invite a new phone-only employee");
+	assert.equal(isPhoneOnlyEmployeeInviteAllowed({ role: "ORG_USER", phoneAlreadyRegistered: false }), false, "employees cannot create employee accounts");
+	assert.equal(isPhoneOnlyEmployeeInviteAllowed({ role: "ORG_ADMIN", phoneAlreadyRegistered: true }), false, "an already-registered phone cannot be invited again");
+	assert.equal(isPasswordlessEmployeeInvite({ role: "ORG_USER", phoneVerifiedAt: null, passwordHash: null }), true, "new employee invite is phone-only and unverified without password");
+	assert.equal(isPasswordlessEmployeeInvite({ role: "ORG_USER", phoneVerifiedAt: now, passwordHash: null }), false, "invited employee phone must remain unverified until OTP onboarding");
+	assert.equal(isPasswordlessEmployeeInvite({ role: "ORG_USER", phoneVerifiedAt: null, passwordHash: "bcrypt-hash" }), false, "new employee invite must not create a password hash");
+	assert.equal(isPasswordlessEmployeeInvite({ role: "ORG_ADMIN", phoneVerifiedAt: null, passwordHash: null }), false, "Phase 1 employee policy does not silently change admin accounts");
+	assert.equal(normalizeBangladeshMobile("01521434555"), "+8801521434555", "local 01 phone normalizes to canonical E.164");
+	assert.equal(normalizeBangladeshMobile("8801521434555"), "+8801521434555", "880-prefixed number normalizes to canonical E.164");
+	assert.equal(normalizeBangladeshMobile("+8801521434555"), "+8801521434555", "canonical E.164 phone remains unchanged");
+	assert.equal(normalizeBangladeshMobile("01212345678"), null, "unsupported BD operator prefix is rejected");
 	assert.equal(isValidWebAuthnOriginConfig("http://localhost:3000", "localhost", false), true, "local WebAuthn origin should be valid during development");
 	assert.equal(isValidWebAuthnOriginConfig("https://app.example.com", "app.example.com", true), true, "production HTTPS origin should accept its host RP ID");
 	assert.equal(isValidWebAuthnOriginConfig("http://app.example.com", "app.example.com", true), false, "production must reject HTTP WebAuthn origin");

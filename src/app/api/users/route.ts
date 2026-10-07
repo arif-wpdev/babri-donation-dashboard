@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireSuperAdmin, requireOrgAccess, ApiError } from "@/lib/rbac";
+import { requireSuperAdmin, ApiError } from "@/lib/rbac";
 import { createOrgAdminSchema } from "@/lib/validations/schemas";
-import bcrypt from "bcryptjs";
+import { canCreatePhoneOnlyOrgAdmin } from "@/lib/auth-session-policy";
+import { isMfaConfigurationReady, normalizeIdentifier } from "@/lib/auth-security";
 
 /**
  * GET /api/users
@@ -30,7 +31,9 @@ export async function GET(request: NextRequest) {
         select: {
           id: true,
           name: true,
-          email: true,
+          phone: true,
+          phoneVerifiedAt: true,
+          passwordHash: true,
           role: true,
           orgId: true,
           createdAt: true,
@@ -41,7 +44,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     return Response.json({
-      data: users,
+      data: users.map(({ passwordHash, ...user }) => ({ ...user, passwordless: user.role === "ORG_ADMIN" && passwordHash === null })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
@@ -71,7 +74,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, email, password, orgId } = parsed.data;
+    const { name, phone: suppliedPhone, orgId } = parsed.data;
+    const phone = normalizeIdentifier(suppliedPhone);
+    if (!/^\+8801[3-9]\d{8}$/.test(phone)) return Response.json({ error: "Enter a valid Bangladesh mobile number." }, { status: 400 });
 
     // Verify org exists
     const org = await prisma.organization.findUnique({
@@ -82,39 +87,34 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "Organization not found" }, { status: 404 });
     }
 
-    // Check email uniqueness
+    const authReady = isMfaConfigurationReady();
     const existing = await prisma.user.findUnique({
-      where: { email },
+      where: { phone },
       select: { id: true },
     });
-    if (existing) {
+    if (!canCreatePhoneOnlyOrgAdmin({ actorRole: "SUPER_ADMIN", organizationActive: Boolean(org), phoneAlreadyRegistered: Boolean(existing), authReady })) {
+      if (!authReady) return Response.json({ error: "Phone-based account setup is unavailable until authentication and SMS are configured." }, { status: 503 });
+      if (!existing) return Response.json({ error: "Org Admin phone provisioning is unavailable." }, { status: 403 });
       return Response.json(
-        { error: "A user with this email already exists" },
+        { error: "An account with this phone number already exists" },
         { status: 409 }
       );
     }
+    const internalEmail = `phone-${phone.replace(/\D/g, "")}@phone.invalid`;
+    let user;
+    try {
+      user = await prisma.user.create({
+        data: { name, email: internalEmail, phone, phoneVerifiedAt: null, passwordHash: null, role: "ORG_ADMIN", orgId },
+        select: { id: true, name: true, phone: true, phoneVerifiedAt: true, role: true, orgId: true, createdAt: true },
+      });
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "P2002") return Response.json({ error: "An account with this phone number already exists" }, { status: 409 });
+      throw error;
+    }
 
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        passwordHash,
-        role: "ORG_ADMIN",
-        orgId,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        orgId: true,
-        createdAt: true,
-      },
-    });
-
-    return Response.json({ data: user }, { status: 201 });
+    const loginUrl = new URL("/login", request.nextUrl.origin);
+    loginUrl.searchParams.set("phone", phone);
+    return Response.json({ data: user, onboardingUrl: loginUrl.toString() }, { status: 201 });
   } catch (error) {
     if (error instanceof ApiError) {
       return Response.json({ error: error.message }, { status: error.statusCode });

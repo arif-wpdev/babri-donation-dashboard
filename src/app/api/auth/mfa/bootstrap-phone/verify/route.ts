@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ensureSameOrigin, enforceRateLimits, hashAuthValue, nextOtpFailure, OTP_LOCK_DURATION_MS, OTP_MAX_FAILED_ATTEMPTS, requestIp, verifyOtpHash, writeSecurityEvent } from "@/lib/auth-security";
-import { canBootstrapSuperAdminPhone } from "@/lib/auth-session-policy";
+import { canBootstrapPasswordAdminPhone } from "@/lib/auth-session-policy";
 
 const schema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(256), phone: z.string().regex(/^\+[1-9]\d{7,14}$/), otp: z.string().regex(/^\d{6}$/) });
 const genericError = { error: "Phone verification failed. Check the details or request a new code." };
@@ -21,13 +21,14 @@ export async function POST(request: Request) {
     ]);
     if (!rate.allowed) return Response.json({ error: "Verification is temporarily unavailable. Try again later." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
 
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true, phoneVerifiedAt: true, passwordHash: true } });
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true, orgId: true, org: { select: { deletedAt: true } }, phoneVerifiedAt: true, passwordHash: true } });
     const validPassword = user?.passwordHash
       ? await bcrypt.compare(parsed.data.password, user.passwordHash)
       : false;
-    if (!user || !canBootstrapSuperAdminPhone(user) || !validPassword) return Response.json(genericError, { status: 400 });
+    const organizationActive = user?.role === "SUPER_ADMIN" || (Boolean(user?.orgId) && !user?.org?.deletedAt);
+    if (!user || !canBootstrapPasswordAdminPhone({ role: user.role, passwordHash: user.passwordHash, phoneVerifiedAt: user.phoneVerifiedAt, organizationActive: Boolean(organizationActive) }) || !validPassword) return Response.json(genericError, { status: 400 });
 
-    const identifierHash = hashAuthValue(user.id, "superadmin-phone-bootstrap");
+    const identifierHash = hashAuthValue(user.id, "admin-phone-bootstrap");
     const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "PHONE_VERIFICATION" } } });
     const now = new Date();
     if (!challenge?.otpHash || !challenge.otpExpiresAt || challenge.otpExpiresAt <= now || challenge.consumedAt || challenge.purpose !== phone || (challenge.lockedUntil && challenge.lockedUntil > now) || challenge.failedAttempts >= OTP_MAX_FAILED_ATTEMPTS) return Response.json(genericError, { status: 400 });
@@ -56,11 +57,11 @@ export async function POST(request: Request) {
       if (claimed.count !== 1) return false;
       const owner = await tx.user.findFirst({ where: { phone, NOT: { id: user.id } }, select: { id: true } });
       if (owner) throw new Error("PHONE_ALREADY_IN_USE");
-      const updated = await tx.user.updateMany({ where: { id: user.id, role: "SUPER_ADMIN", phoneVerifiedAt: null }, data: { phone, phoneVerifiedAt: now } });
+      const updated = await tx.user.updateMany({ where: { id: user.id, role: user.role, orgId: user.orgId, phoneVerifiedAt: null, passwordHash: user.passwordHash }, data: { phone, phoneVerifiedAt: now } });
       return updated.count === 1;
     }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
     if (!verified) return Response.json(genericError, { status: 409 });
-    await writeSecurityEvent({ userId: user.id, eventType: "PHONE_VERIFICATION", ip, userAgent: request.headers.get("user-agent"), details: { method: "superadmin_bootstrap" } });
+    await writeSecurityEvent({ userId: user.id, eventType: "PHONE_VERIFICATION", ip, userAgent: request.headers.get("user-agent"), details: { method: "admin_phone_bootstrap" } });
     return Response.json({ success: true, message: "Phone verified. You can now sign in with your phone number." });
   } catch (error) {
     if (error instanceof Error && error.message === "Invalid request origin") return Response.json({ error: "Invalid request" }, { status: 400 });

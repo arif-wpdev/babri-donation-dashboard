@@ -11,6 +11,7 @@ interface DonationsParams {
   donorId?: string;
   from?: string;
   to?: string;
+  summary?: boolean;
 }
 
 async function fetchDonations(params: DonationsParams) {
@@ -24,6 +25,7 @@ async function fetchDonations(params: DonationsParams) {
   if (params.donorId) query.set("donorId", params.donorId);
   if (params.from) query.set("from", params.from);
   if (params.to) query.set("to", params.to);
+  if (params.summary === false) query.set("summary", "false");
 
   const res = await fetch(`/api/donations?${query.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch donations");

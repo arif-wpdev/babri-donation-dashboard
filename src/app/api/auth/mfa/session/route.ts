@@ -1,14 +1,22 @@
 import { ensureSameOrigin, isMfaConfigurationReady } from "@/lib/auth-security";
 import { env } from "@/env";
+import { isEmployeeEnrollmentHandoff } from "@/lib/auth-session-policy";
 
 export async function POST(request: Request) {
   try {
     ensureSameOrigin(request);
-    if (!isMfaConfigurationReady()) return Response.json({ error: "Authentication is temporarily unavailable." }, { status: 503 });
-    const body = await request.json().catch(() => null) as { loginTicket?: unknown; callbackUrl?: unknown } | null;
-    if (typeof body?.loginTicket !== "string" || body.loginTicket.length > 128) return Response.json({ error: "Authentication verification is required" }, { status: 400 });
+    const body = await request.json().catch(() => null) as { loginTicket?: unknown; onboardingTicket?: unknown; callbackUrl?: unknown } | null;
+    const hasOnboardingTicket = typeof body?.onboardingTicket === "string";
+    const handoff = isEmployeeEnrollmentHandoff({ hasOnboardingTicket, hasLoginTicket: typeof body?.loginTicket === "string", onboardingTicketLength: typeof body?.onboardingTicket === "string" ? body.onboardingTicket.length : 0 });
+    if (!handoff) return Response.json({ error: "Authentication verification is required" }, { status: 400 });
+    const isEmployeeOnboarding = handoff === "onboarding";
+    if (!isEmployeeOnboarding && !isMfaConfigurationReady()) return Response.json({ error: "Authentication is temporarily unavailable." }, { status: 503 });
+    const ticket = isEmployeeOnboarding ? body?.onboardingTicket : body?.loginTicket;
+    if (typeof ticket !== "string" || ticket.length > 128) return Response.json({ error: "Authentication verification is required" }, { status: 400 });
     const requestOrigin = new URL(request.url).origin;
-    if (new URL(env.AUTH_APP_ORIGIN!).origin !== requestOrigin) return Response.json({ error: "Invalid request origin" }, { status: 400 });
+    if (!env.AUTH_APP_ORIGIN) return Response.json({ error: "Authentication is temporarily unavailable." }, { status: 503 });
+    const configuredOrigin = new URL(env.AUTH_APP_ORIGIN);
+    if (configuredOrigin.pathname !== "/" || configuredOrigin.search || configuredOrigin.hash || configuredOrigin.username || configuredOrigin.password || configuredOrigin.origin !== requestOrigin) return Response.json({ error: "Invalid request origin" }, { status: 400 });
     if (process.env.NODE_ENV === "production" && !requestOrigin.startsWith("https://")) return Response.json({ error: "Authentication could not be finalized" }, { status: 400 });
     const callback = new URL("/api/auth/callback/credentials", requestOrigin);
     const csrf = await fetch(new URL("/api/auth/csrf", requestOrigin), { headers: { cookie: request.headers.get("cookie") || "" }, cache: "no-store" });
@@ -26,8 +34,15 @@ export async function POST(request: Request) {
     const callbackCookies = [...cookieValues.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
     const callbackResponse = await fetch(callback, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", "x-auth-return-redirect": "1", cookie: callbackCookies },
-      body: new URLSearchParams({ loginTicket: body.loginTicket, csrfToken, callbackUrl: "/dashboard", json: "true" }),
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-auth-return-redirect": "1",
+        cookie: callbackCookies,
+        ...(request.headers.get("user-agent") ? { "user-agent": request.headers.get("user-agent")! } : {}),
+        ...(request.headers.get("sec-ch-ua-mobile") ? { "sec-ch-ua-mobile": request.headers.get("sec-ch-ua-mobile")! } : {}),
+        ...(request.headers.get("sec-ch-ua") ? { "sec-ch-ua": request.headers.get("sec-ch-ua")! } : {}),
+      },
+      body: new URLSearchParams({ [isEmployeeOnboarding ? "onboardingTicket" : "loginTicket"]: ticket, csrfToken, callbackUrl: "/dashboard", json: "true" }),
       cache: "no-store",
       redirect: "manual",
     });
@@ -40,11 +55,15 @@ export async function POST(request: Request) {
     }
     const setCookies = callbackResponse.headers.getSetCookie();
     if (!setCookies.some((cookie) => /^(?:__Host-|__Secure-)?authjs\.session-token=/.test(cookie))) return Response.json({ error: "Authentication verification expired. Sign in again." }, { status: 401 });
-    const callbackUrl = typeof body.callbackUrl === "string" && body.callbackUrl.startsWith("/") && !body.callbackUrl.startsWith("//") ? body.callbackUrl : "/dashboard";
+    const callbackUrl = typeof body?.callbackUrl === "string" && body.callbackUrl.startsWith("/") && !body.callbackUrl.startsWith("//") ? body.callbackUrl : "/dashboard";
     const response = Response.json({ success: true, redirectTo: callbackUrl });
     for (const cookie of setCookies) response.headers.append("set-cookie", cookie);
+    if (isEmployeeOnboarding) {
+      const unlockCookieName = process.env.NODE_ENV === "production" ? "__Host-mobile-unlock-preauth" : "mobile-unlock-preauth";
+      response.headers.append("set-cookie", `${unlockCookieName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+    }
     return response;
-  } catch (error) {
+  } catch {
     console.error("[AUTH_SESSION] Could not finalize authentication");
     return Response.json({ error: "Authentication could not be finalized" }, { status: 400 });
   }

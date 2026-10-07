@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { enforceRateLimits, hashAuthValue, isMfaConfigurationReady, normalizeIdentifier, requestIp, writeSecurityEvent } from "@/lib/auth-security";
 import { headers } from "next/headers";
 import { env } from "@/env";
-import { isLoginTicketCurrent } from "@/lib/auth-session-policy";
+import { canCompletePasswordlessAdminEnrollment, canEmployeeCompleteEnrollmentLogin, canEmployeeReceiveSession, isEmployeeFirstPasskeyTicket, isLoginTicketCurrent, isPasswordlessAdminFirstPasskeyTicket, isPhoneOnlyPasswordlessRole } from "@/lib/auth-session-policy";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Module augmentation — extend the built-in session/user types
@@ -65,14 +65,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         identifier: { label: "Verified phone number", type: "tel" },
         password: { label: "Password", type: "password" },
         loginTicket: { label: "One-time login ticket", type: "text" },
+        onboardingTicket: { label: "One-time employee onboarding ticket", type: "text" },
       },
 
       async authorize(credentials) {
         const mfaEnabled = env.AUTH_MFA_ENABLED === "true";
         const mfaReady = isMfaConfigurationReady();
-        if (mfaEnabled && !mfaReady) return null;
-        if (mfaEnabled) {
-          const ticketValue = z.string().min(32).safeParse(credentials?.loginTicket);
+        const isEmployeeOnboardingHandoff = typeof credentials?.onboardingTicket === "string";
+        if (mfaEnabled && !mfaReady && !isEmployeeOnboardingHandoff) return null;
+        if (mfaEnabled || credentials?.loginTicket || isEmployeeOnboardingHandoff) {
+          if (!mfaEnabled && !isEmployeeOnboardingHandoff) return null;
+          const ticketValue = z.string().min(32).safeParse(isEmployeeOnboardingHandoff ? credentials?.onboardingTicket : credentials?.loginTicket);
           if (!ticketValue.success) return null;
           const tokenHash = createHash("sha256").update(ticketValue.data).digest("hex");
           const ticket = await prisma.loginTicket.findUnique({ where: { tokenHash } });
@@ -81,13 +84,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (!user || user.org?.deletedAt) return null;
           const preAuth = ticket.preauthId ? await prisma.loginPreAuth.findUnique({ where: { id: ticket.preauthId } }) : null;
           if (!preAuth || preAuth.userId !== user.id || preAuth.expiresAt <= new Date() || !preAuth.consumedAt) return null;
+          const isEmployeeEnrollment = preAuth.deliveryChannel === "employee-enrollment" && preAuth.passkeyOnly && user.role === "ORG_USER";
+          const isAdminEnrollment = preAuth.deliveryChannel === "employee-enrollment" && preAuth.passkeyOnly && user.role === "ORG_ADMIN";
+          const isPasswordlessEnrollment = isEmployeeEnrollment || isAdminEnrollment;
+          if (isEmployeeOnboardingHandoff !== isPasswordlessEnrollment) return null;
+          if (isPasswordlessEnrollment) {
+            if (isEmployeeEnrollment && !isEmployeeFirstPasskeyTicket({ role: user.role, phoneVerifiedAt: user.phoneVerifiedAt, preAuthMarker: preAuth.deliveryChannel, passkeyOnly: preAuth.passkeyOnly, preAuthConsumedAt: preAuth.consumedAt, preAuthExpiresAt: preAuth.expiresAt, now: new Date() })) return null;
+            if (isAdminEnrollment && !isPasswordlessAdminFirstPasskeyTicket({ role: user.role, passwordHash: user.passwordHash, phoneVerifiedAt: user.phoneVerifiedAt, preAuthMarker: preAuth.deliveryChannel, passkeyOnly: preAuth.passkeyOnly, preAuthConsumedAt: preAuth.consumedAt, preAuthExpiresAt: preAuth.expiresAt, now: new Date() })) return null;
+            const activePasskey = await prisma.webAuthnCredential.findFirst({ where: { userId: user.id, revokedAt: null }, select: { id: true } });
+            const enrollmentLoginInput = {
+              role: user.role,
+              phoneVerifiedAt: user.phoneVerifiedAt,
+              orgActive: Boolean(user.orgId) && !user.org?.deletedAt,
+              enrollmentMarker: preAuth.deliveryChannel,
+              passkeyOnly: preAuth.passkeyOnly,
+              enrollmentConsumedAt: preAuth.consumedAt,
+              enrollmentExpiresAt: preAuth.expiresAt,
+              hasActivePasskey: Boolean(activePasskey),
+              now: new Date(),
+            };
+            if (isEmployeeEnrollment && !canEmployeeCompleteEnrollmentLogin(enrollmentLoginInput)) return null;
+            if (isAdminEnrollment && !canCompletePasswordlessAdminEnrollment({ ...enrollmentLoginInput, passwordHash: user.passwordHash })) return null;
+          } else if (!canEmployeeReceiveSession({ role: user.role, phoneVerifiedAt: user.phoneVerifiedAt })) {
+            return null;
+          }
           const authSession = await prisma.$transaction(async (tx) => {
             const handoffAt = new Date();
-            const currentUser = await tx.user.findUnique({ where: { id: user.id }, select: { passwordChangedAt: true } });
-            if (!isLoginTicketCurrent(currentUser?.passwordChangedAt ?? null, preAuth.createdAt)) return null;
+            if (!isPasswordlessEnrollment) {
+              const currentUser = await tx.user.findUnique({ where: { id: user.id }, select: { passwordChangedAt: true } });
+              if (!isLoginTicketCurrent(currentUser?.passwordChangedAt ?? null, preAuth.createdAt)) return null;
+            }
             const consumed = await tx.loginTicket.updateMany({ where: { id: ticket.id, tokenHash, expiresAt: { gt: handoffAt }, consumedAt: null }, data: { consumedAt: handoffAt } });
             if (consumed.count !== 1) return null;
-            return tx.authSession.create({ data: { userId: user.id, expiresAt: new Date(handoffAt.getTime() + 8 * 60 * 60 * 1000) } });
+            const mobileLockEnabled = user.role === "ORG_USER" && /android|iphone|ipod|ipad|mobile/i.test((await headers()).get("user-agent") ?? "");
+            return tx.authSession.create({ data: { userId: user.id, expiresAt: new Date(handoffAt.getTime() + 8 * 60 * 60 * 1000), mobileLockEnabled } });
           }, { isolationLevel: "Serializable", maxWait: 5_000, timeout: 10_000 });
           if (!authSession) return null;
           await writeSecurityEvent({ userId: user.id, eventType: "LOGIN_SUCCESS", details: { method: "mfa" } });
@@ -114,6 +144,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: { phone: normalized },
           include: { org: { select: { id: true, slug: true, deletedAt: true } } },
         });
+
+        if (user && isPhoneOnlyPasswordlessRole(user.role) && user.passwordHash === null) return null;
 
         if (!user?.passwordHash || user.org?.deletedAt || !user.phoneVerifiedAt || normalizeIdentifier(user.phone ?? "") !== normalized) {
           const dummyPasswordHash = env.AUTH_DUMMY_PASSWORD_HASH && /^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$/.test(env.AUTH_DUMMY_PASSWORD_HASH)

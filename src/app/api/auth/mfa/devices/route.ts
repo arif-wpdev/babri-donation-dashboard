@@ -1,14 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import { clearTrustedDevice, ensureSameOrigin, getTrustedDeviceCredential, requestIp, writeSecurityEvent } from "@/lib/auth-security";
+import { clearTrustedDevice, ensureSameOrigin, requestIp, trustedDeviceTokenHash, writeSecurityEvent } from "@/lib/auth-security";
 
 export async function GET() {
   try {
     const user = await requireAuth();
     const devices = await prisma.webAuthnCredential.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, select: { id: true, credentialDeviceId: true, deviceName: true, deviceType: true, backedUp: true, createdAt: true, lastUsedAt: true, revokedAt: true, trustedDevices: { select: { id: true, createdAt: true, lastUsedAt: true, revokedAt: true } } } });
     const sessions = await prisma.authSession.findMany({ where: { userId: user.id, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { lastUsedAt: "desc" }, select: { id: true, createdAt: true, lastUsedAt: true, expiresAt: true } });
-    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { phone: true, phoneVerifiedAt: true } });
-    return Response.json({ devices: devices.map(({ credentialDeviceId, trustedDevices, ...device }) => ({ ...device, credentialId: credentialDeviceId, trustedDevices })), sessions: sessions.map(({ id, createdAt, lastUsedAt, expiresAt }) => ({ id, createdAt, lastUsedAt, expiresAt, isCurrent: id === user.authSessionId })), phone: account?.phone ?? "", phoneVerified: Boolean(account?.phoneVerifiedAt) });
+    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { phone: true, phoneVerifiedAt: true, passwordHash: true } });
+    return Response.json({ devices: devices.map(({ credentialDeviceId, trustedDevices, ...device }) => ({ ...device, credentialId: credentialDeviceId, trustedDevices })), sessions: sessions.map(({ id, createdAt, lastUsedAt, expiresAt }) => ({ id, createdAt, lastUsedAt, expiresAt, isCurrent: id === user.authSessionId })), phone: account?.phone ?? "", phoneVerified: Boolean(account?.phoneVerifiedAt), passwordless: account?.passwordHash === null });
   } catch (error) {
     if (error instanceof ApiError) return Response.json({ error: error.message }, { status: error.statusCode });
     return Response.json({ error: "Could not load security settings" }, { status: 500 });
@@ -22,15 +22,18 @@ export async function DELETE(request: Request) {
     const body = await request.json().catch(() => null) as { credentialId?: unknown; sessionId?: unknown } | null;
     if (typeof body?.credentialId === "string") {
       const now = new Date();
+      const currentTrustTokenHash = await trustedDeviceTokenHash();
       const revoked = await prisma.$transaction(async (tx) => {
         const credential = await tx.webAuthnCredential.updateMany({ where: { credentialId: body.credentialId as string, userId: user.id, revokedAt: null }, data: { revokedAt: now } });
         if (credential.count !== 1) return false;
+        const tokenRevoked = currentTrustTokenHash
+          ? await tx.trustedDevice.updateMany({ where: { tokenHash: currentTrustTokenHash, credentialId: body.credentialId as string, userId: user.id, revokedAt: null }, data: { revokedAt: now } })
+          : { count: 0 };
         await tx.trustedDevice.updateMany({ where: { credentialId: body.credentialId as string, userId: user.id, revokedAt: null }, data: { revokedAt: now } });
-        return true;
+        return { success: true, clearCookie: tokenRevoked.count === 1 };
       }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
       if (!revoked) return Response.json({ error: "Device not found" }, { status: 404 });
-      const cookieCredential = await getTrustedDeviceCredential(user.id);
-      if (cookieCredential?.credential.credentialId === body.credentialId) await clearTrustedDevice();
+      if (revoked.clearCookie) await clearTrustedDevice();
       await writeSecurityEvent({ userId: user.id, eventType: "DEVICE_REVOKED", ip: requestIp(request.headers), userAgent: request.headers.get("user-agent"), details: { type: "passkey" } });
       return Response.json({ success: true });
     }

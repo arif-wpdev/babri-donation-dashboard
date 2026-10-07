@@ -20,7 +20,7 @@ function formatTaka(value: number) {
 
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
-  const { data, isLoading, isError } = useDashboardStats(dateRange);
+  const { data, isLoading, isError } = useDashboardStats(dateRange, true);
   const sourceData = data?.sourceReport ?? [];
   const campaignData = data?.campaignReport ?? [];
   const pieData = campaignData.filter((campaign) => campaign.volume > 0);

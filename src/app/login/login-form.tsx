@@ -7,6 +7,7 @@ import { Eye, EyeOff, Fingerprint, Loader2, ShieldCheck } from "lucide-react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/types";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { SuperAdminPhoneSetup } from "./super-admin-phone-setup";
 import { EmployeePhoneSetup } from "./employee-phone-setup";
 
@@ -22,6 +23,9 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
   const [otpLocked, setOtpLocked] = useState(false);
   const [passkeyOptions, setPasskeyOptions] = useState<PublicKeyCredentialRequestOptionsJSON | undefined>();
   const [registrationOptions, setRegistrationOptions] = useState<PublicKeyCredentialCreationOptionsJSON | undefined>();
+  const [employeeLogin, setEmployeeLogin] = useState(false);
+  const [orgAdminLogin, setOrgAdminLogin] = useState(false);
+  const [orgAdminNeedsMigration, setOrgAdminNeedsMigration] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setResendIn((seconds) => Math.max(0, seconds - 1)), 1000);
@@ -33,10 +37,23 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
     const formData = new FormData(e.currentTarget);
     setIsPending(true);
     setErrorMsg(null);
+    const phoneIdentifier = String(formData.get("identifier") || "");
+    const passwordValue = String(formData.get("password") || "");
     try {
-      const response = await fetch("/api/auth/mfa/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: formData.get("identifier"), password: formData.get("password") }) });
+      const response = await fetch("/api/auth/mfa/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: phoneIdentifier, password: passwordValue || undefined }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Sign-in failed");
+      setEmployeeLogin(result.employee === true);
+      setOrgAdminLogin(result.role === "ORG_ADMIN");
+      setOrgAdminNeedsMigration(result.needsPasswordlessMigration === true);
+      if (result.role === "ORG_ADMIN" && result.needsPasswordlessMigration !== true) {
+        const { signIn } = await import("next-auth/react");
+        const signedIn = await signIn("credentials", { identifier: phoneIdentifier, password: passwordValue, redirect: false });
+        if (signedIn?.error) throw new Error("Could not finish the existing Org Admin sign-in.");
+        router.replace(callbackUrl);
+        router.refresh();
+        return;
+      }
       if (result.next === "passkey") {
         setPasskeyOptions(result.options);
         setStep("passkey");
@@ -44,8 +61,8 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
         setPasskeyOptions(undefined);
         setStep("otp");
         setOtpLocked(false);
+        setResendIn(60);
         try {
-          setResendIn(0);
           await requestOtp();
         } catch (error) {
           setErrorMsg(error instanceof Error ? error.message : "Could not send verification code");
@@ -79,9 +96,14 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
   const requestOtp = async () => {
     const response = await fetch("/api/auth/mfa/otp/request", { method: "POST" });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Could not send verification code");
+    if (!response.ok) {
+      const retryAfter = Number(result.retryAfterSeconds || response.headers.get("Retry-After"));
+      if (Number.isFinite(retryAfter) && retryAfter > 0) setResendIn(retryAfter);
+      throw new Error(result.error || "Could not send verification code");
+    }
     setResendIn(result.resendInSeconds || 60);
     setAttemptsRemaining(3);
+    setOtpLocked(false);
   };
 
   const finishLogin = async (loginTicket: string, offerPasskeyRegistration = false) => {
@@ -118,6 +140,24 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : "Passkey verification failed");
       setStep("passkey");
+      if (employeeLogin) setPasskeyOptions(undefined);
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const fallbackToOtp = async () => {
+    setIsPending(true);
+    setErrorMsg(null);
+    try {
+      const response = await fetch("/api/auth/mfa/passkey/fallback", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "OTP fallback could not be started");
+      setPasskeyOptions(undefined);
+      setStep("otp");
+      await requestOtp();
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "OTP fallback could not be started");
     } finally {
       setIsPending(false);
     }
@@ -168,6 +208,27 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
       router.refresh();
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : "Passkey registration failed");
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const migrateOrgAdmin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsPending(true);
+    setErrorMsg(null);
+    const password = String(new FormData(event.currentTarget).get("migrationPassword") || "");
+    try {
+      const response = await fetch("/api/auth/mfa/admin-migration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Account migration failed");
+      const { signOut } = await import("next-auth/react");
+      await signOut({ redirect: false });
+      toast.success("Admin account migrated. Sign in with your registered phone.");
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Account migration failed");
     } finally {
       setIsPending(false);
     }
@@ -259,7 +320,7 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
       
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">Password <span className="text-muted-foreground">(Admin)</span></Label>
         </div>
         <div className="relative">
           <Input
@@ -267,7 +328,7 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
             name="password"
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
-            required
+            required={!mfaEnabled}
             className="h-11 rounded-xl bg-background/50 pr-10"
           />
           <button
@@ -286,25 +347,28 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
         className="h-11 w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-medium shadow-sm transition-colors mt-2 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
       >
         {isPending && <Loader2 className="size-4 animate-spin" />}
-        <span>{mfaEnabled ? "Password → OTP → Login" : "Sign in to Dashboard"}</span>
+        <span>{mfaEnabled ? "Continue securely" : "Sign in to Dashboard"}</span>
       </button>
-      {mfaEnabled && <p className="text-center text-xs text-muted-foreground">On a trusted mobile device, a registered passkey can replace the OTP.</p>}
+      {mfaEnabled && <p className="text-center text-xs text-muted-foreground">Employees: phone → trusted-device passkey or registered-phone OTP. Administrators continue with password and verification.</p>}
       </form>}
 
-      {step === "otp" && <form onSubmit={verifyOtp} className="flex w-full flex-col gap-5">
-        <div className="rounded-xl bg-muted/50 p-3 text-sm"><ShieldCheck className="mr-2 inline size-4" />Enter the code sent to your verified phone.</div>
-        <div className="flex flex-col gap-2"><Label htmlFor="otp">6-digit verification code</Label><Input id="otp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} className="h-12 text-center text-xl tracking-[0.4em]" /></div>
-        <p aria-live="polite" className="text-sm text-muted-foreground">{otpLocked ? "Verification is temporarily unavailable. Use a recovery code or try again after the lock period." : `${attemptsRemaining} attempts remaining · ${resendIn > 0 ? `Resend available in ${resendIn}s` : "You can request a new code"}`}</p>
-        <button type="submit" disabled={isPending || otpLocked || otp.length !== 6} className="h-11 rounded-xl bg-primary font-medium text-primary-foreground disabled:opacity-60">{isPending ? <Loader2 className="mx-auto size-4 animate-spin" /> : "Verify OTP and sign in"}</button>
-        <button type="button" disabled={isPending || otpLocked || resendIn > 0} onClick={() => void requestOtp().then(() => setErrorMsg(null)).catch((error) => setErrorMsg(error.message))} className="text-sm text-primary disabled:text-muted-foreground">Resend code</button>
-        <details className="text-left text-sm"><summary className="cursor-pointer text-primary">Use a recovery code</summary><form onSubmit={verifyRecoveryCode} className="mt-3 flex gap-2"><Input name="recoveryCode" autoComplete="one-time-code" required maxLength={64} placeholder="One-time recovery code" /><button type="submit" disabled={isPending} className="rounded-md border px-3">Verify</button></form></details>
-        <button type="button" disabled={isPending} onClick={() => setStep("password")} className="text-sm text-muted-foreground">Back to password</button>
-      </form>}
+      {step === "otp" && <div className="flex w-full flex-col gap-5">
+        <div className="rounded-xl bg-muted/50 p-3 text-sm"><ShieldCheck className="mr-2 inline size-4" />Enter the code sent only to your registered phone.</div>
+        <form onSubmit={verifyOtp} className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2"><Label htmlFor="otp">6-digit verification code</Label><Input id="otp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} className="h-12 text-center text-xl tracking-[0.4em]" /></div>
+          <p aria-live="polite" className="text-sm text-muted-foreground">{otpLocked ? "Verification is temporarily unavailable. Use a recovery code or try again after the lock period." : `${attemptsRemaining} attempts remaining · ${resendIn > 0 ? `Resend available in ${resendIn}s` : "You can request a new code"}`}</p>
+          <button type="submit" disabled={isPending || otpLocked || otp.length !== 6} className="h-11 rounded-xl bg-primary font-medium text-primary-foreground disabled:opacity-60">{isPending ? <Loader2 className="mx-auto size-4 animate-spin" /> : "Verify OTP and sign in"}</button>
+          <button type="button" disabled={isPending || otpLocked || resendIn > 0} onClick={() => void requestOtp().then(() => setErrorMsg(null)).catch((error) => setErrorMsg(error.message))} className="text-sm text-primary disabled:text-muted-foreground">Resend code</button>
+        </form>
+        {!employeeLogin && <details className="text-left text-sm"><summary className="cursor-pointer text-primary">Use a recovery code</summary><form onSubmit={verifyRecoveryCode} className="mt-3 flex gap-2"><Input name="recoveryCode" autoComplete="one-time-code" required maxLength={64} placeholder="One-time recovery code" /><button type="submit" disabled={isPending} className="rounded-md border px-3">Verify</button></form></details>}
+        {!employeeLogin && <button type="button" disabled={isPending} onClick={() => setStep("password")} className="text-sm text-muted-foreground">Back to password</button>}
+      </div>}
 
       {step === "passkey" && <div className="flex w-full flex-col gap-4 text-center">
         <div className="rounded-xl bg-muted/50 p-4 text-sm"><Fingerprint className="mx-auto mb-2 size-8 text-primary" />Use your device passkey, fingerprint or Face ID to sign in.</div>
         <button type="button" disabled={isPending} onClick={() => void authenticatePasskey()} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary font-medium text-primary-foreground disabled:opacity-60"><Fingerprint className="size-4" />{isPending ? "Verifying…" : "Continue with passkey"}</button>
-        <button type="button" disabled={isPending} onClick={() => { setStep("password"); setPasskeyOptions(undefined); }} className="text-sm text-muted-foreground">Restart sign-in</button>
+        {employeeLogin && <button type="button" disabled={isPending} onClick={() => void fallbackToOtp()} className="text-sm text-primary">Passkey কাজ করছে না? নিবন্ধিত ফোনে OTP নিন</button>}
+        <button type="button" disabled={isPending} onClick={() => { setStep("password"); setPasskeyOptions(undefined); setEmployeeLogin(false); }} className="text-sm text-muted-foreground">Restart sign-in</button>
       </div>}
       {step === "register-passkey" && <div className="flex w-full flex-col gap-4 text-center">
         <div className="rounded-xl bg-muted/50 p-4 text-sm"><Fingerprint className="mx-auto mb-2 size-8 text-primary" />Password ও OTP verification সম্পন্ন। এই device-এ passkey যোগ করুন—biometric তথ্য device-এর বাইরে যাবে না।</div>
@@ -317,6 +381,7 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
       </details>}
       {step === "password" && <SuperAdminPhoneSetup />}
       {step === "password" && <EmployeePhoneSetup />}
+      {(step === "otp" || step === "passkey") && orgAdminLogin && orgAdminNeedsMigration && <details className="mt-4 border-t pt-4 text-sm"><summary className="cursor-pointer text-primary">Migrate this legacy Org Admin account to phone + passkey</summary><p className="my-2 text-xs text-muted-foreground">Your current password remains active unless migration succeeds. Migration requires a verified phone and at least one active passkey, then revokes all existing sessions.</p><form onSubmit={migrateOrgAdmin} className="flex flex-col gap-2"><Input name="migrationPassword" type="password" autoComplete="current-password" required maxLength={256} placeholder="Confirm current password" /><button type="submit" disabled={isPending} className="h-10 rounded-xl border">Migrate account</button></form></details>}
     </div>
   );
 }

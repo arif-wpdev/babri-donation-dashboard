@@ -1,16 +1,8 @@
 "use client";
 
-import { Bell, Search, Mail, LogOut, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -29,7 +21,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
   const router = useRouter();
   const pathname = usePathname();
   const isDashboardHome = pathname === "/dashboard";
-  const { data: adSpend, isLoading: isAdSpendLoading, isError: isAdSpendError } = useAdSpend(null);
+  const { data: adSpend, isLoading: isAdSpendLoading, isError: isAdSpendError } = useAdSpend(null, { enabled: isDashboardHome });
   const pathSegments = pathname.split("/").filter(Boolean);
 
   let title = pathSegments[pathSegments.length - 1] || "Babri Masjid Donation Dashboard";

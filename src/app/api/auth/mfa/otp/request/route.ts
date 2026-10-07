@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { deliverOtp, ensureSameOrigin, enforceRateLimits, getOtpRequestBlock, getPreAuthUser, hashAuthValue, isMfaConfigurationReady, randomOtp, requestIp, writeSecurityEvent } from "@/lib/auth-security";
+import { canEmployeeFallbackToOtp, isRegisteredEmployeeOtpDestination } from "@/lib/auth-session-policy";
 
 export async function POST(request: Request) {
   try {
@@ -7,7 +8,14 @@ export async function POST(request: Request) {
     if (!isMfaConfigurationReady()) return Response.json({ error: "Verification is temporarily unavailable." }, { status: 503 });
     const preAuth = await getPreAuthUser();
     if (!preAuth) return Response.json({ error: "Sign-in attempt expired. Enter your password again." }, { status: 401 });
-    if (preAuth.preAuth.passkeyOnly) return Response.json({ error: "This trusted device requires its registered passkey." }, { status: 403 });
+    const organization = preAuth.user.orgId ? await prisma.organization.findUnique({ where: { id: preAuth.user.orgId }, select: { deletedAt: true } }) : null;
+    const organizationActive = preAuth.user.role === "SUPER_ADMIN" || (Boolean(preAuth.user.orgId) && Boolean(organization) && !organization?.deletedAt);
+    if (!organizationActive) return Response.json({ error: "Sign-in attempt expired. Restart sign-in." }, { status: 401 });
+    if (preAuth.preAuth.passkeyOnly) {
+      if (!canEmployeeFallbackToOtp({ role: preAuth.user.role, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive, preAuthPasskeyOnly: true, deliveryChannel: preAuth.preAuth.deliveryChannel })) {
+        return Response.json({ error: "This trusted device requires its registered passkey." }, { status: 403 });
+      }
+    }
     if (preAuth.preAuth.deliveryChannel === "sms" && !preAuth.user.phoneVerifiedAt) return Response.json({ error: "Verification is temporarily unavailable." }, { status: 401 });
     const ip = requestIp(request.headers);
     const rate = await enforceRateLimits([
@@ -21,6 +29,9 @@ export async function POST(request: Request) {
     const channel = preAuth.preAuth.deliveryChannel === "sms" ? "sms" as const : null;
     const destination = preAuth.user.phone;
     if (!channel || !destination || !preAuth.user.phoneVerifiedAt) {
+      return Response.json({ error: "Verification is temporarily unavailable. Try signing in again." }, { status: 400 });
+    }
+    if (preAuth.user.role === "ORG_USER" && !isRegisteredEmployeeOtpDestination({ role: preAuth.user.role, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, registeredPhone: preAuth.user.phone, destination })) {
       return Response.json({ error: "Verification is temporarily unavailable. Try signing in again." }, { status: 400 });
     }
     const otp = randomOtp();

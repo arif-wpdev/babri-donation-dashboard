@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
 import { ensureSameOrigin, enforceRateLimits, hashAuthValue, requestIp, writeSecurityEvent } from "@/lib/auth-security";
+import { canGenerateAccountRecoveryCodes } from "@/lib/auth-session-policy";
 
 export async function POST(request: Request) {
   try {
@@ -12,9 +13,11 @@ export async function POST(request: Request) {
     if (!rate.allowed) return Response.json({ error: "Recovery is temporarily unavailable." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
     const body = await request.json().catch(() => null) as { action?: unknown; password?: unknown; code?: unknown } | null;
     if (body?.action === "generate") {
-      if (typeof body.password !== "string") return Response.json({ error: "Confirm your password to generate recovery codes." }, { status: 400 });
-      const account = await prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
-      if (!account?.passwordHash || !await bcrypt.compare(body.password, account.passwordHash)) return Response.json({ error: "Password confirmation failed." }, { status: 401 });
+      const account = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, passwordHash: true, phoneVerifiedAt: true, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } } });
+      if (!account || !canGenerateAccountRecoveryCodes({ role: account.role, passwordHash: account.passwordHash, phoneVerifiedAt: account.phoneVerifiedAt, hasActivePasskey: account.webAuthnCredentials.length > 0 })) return Response.json({ error: "Complete phone verification and register a passkey before generating recovery codes." }, { status: 409 });
+      if (account.passwordHash) {
+        if (typeof body.password !== "string" || !await bcrypt.compare(body.password, account.passwordHash)) return Response.json({ error: "Password confirmation failed." }, { status: 401 });
+      }
       const codes = Array.from({ length: 10 }, () => randomBytes(9).toString("base64url").toUpperCase());
       const recoveryHashes = codes.map((code) => hashAuthValue(code, "recovery"));
       await prisma.$transaction(async (tx) => {
