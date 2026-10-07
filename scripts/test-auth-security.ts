@@ -30,7 +30,7 @@ void Promise.all([
 	isCredentialTrustedForUser,
 	prefersMobileAuthFlow,
 sanitizeSecurityEventDetails,
-	}, { isStrongAuthSession, isActiveSessionRecord, isLoginTicketCurrent, clearExpiredOtpLock, canBootstrapSuperAdminPhone, isValidWebAuthnOriginConfig }, { isGreenwebSmsAccepted }, { getDonorDonationDateBounds, matchesPeriodDonationFilters }]) => {
+	}, { isStrongAuthSession, isActiveSessionRecord, isLoginTicketCurrent, clearExpiredOtpLock, canBootstrapSuperAdminPhone, canBootstrapEmployeePhone, isValidWebAuthnOriginConfig }, { isGreenwebSmsAccepted }, { getDonorDonationDateBounds, matchesPeriodDonationFilters }]) => {
 	const otp = randomOtp();
 	assert.match(otp, /^\d{6}$/);
 	assert.equal(verifyOtpHash(hashAuthValue(otp, "otp"), otp), true);
@@ -140,6 +140,10 @@ sanitizeSecurityEventDetails,
 	assert.equal(canBootstrapSuperAdminPhone({ role: "ORG_ADMIN", passwordHash: "bcrypt-hash", phoneVerifiedAt: null }), false, "organization admins cannot use the bootstrap route");
 	assert.equal(canBootstrapSuperAdminPhone({ role: "SUPER_ADMIN", passwordHash: null, phoneVerifiedAt: null }), false, "passwordless accounts cannot use bootstrap");
 	assert.equal(canBootstrapSuperAdminPhone({ role: "SUPER_ADMIN", passwordHash: "bcrypt-hash", phoneVerifiedAt: now }), false, "verified accounts cannot replace their phone through bootstrap");
+	assert.equal(canBootstrapEmployeePhone({ role: "ORG_USER", passwordHash: "bcrypt-hash", phoneVerifiedAt: null }), true, "invited employee may verify the phone attached to the invitation");
+	assert.equal(canBootstrapEmployeePhone({ role: "ORG_ADMIN", passwordHash: "bcrypt-hash", phoneVerifiedAt: null }), false, "admins cannot use employee phone bootstrap");
+	assert.equal(canBootstrapEmployeePhone({ role: "ORG_USER", passwordHash: null, phoneVerifiedAt: null }), false, "passwordless employee cannot use employee phone bootstrap");
+	assert.equal(canBootstrapEmployeePhone({ role: "ORG_USER", passwordHash: "bcrypt-hash", phoneVerifiedAt: now }), false, "already verified employee cannot replace phone through bootstrap");
 	assert.equal(isValidWebAuthnOriginConfig("http://localhost:3000", "localhost", false), true, "local WebAuthn origin should be valid during development");
 	assert.equal(isValidWebAuthnOriginConfig("https://app.example.com", "app.example.com", true), true, "production HTTPS origin should accept its host RP ID");
 	assert.equal(isValidWebAuthnOriginConfig("http://app.example.com", "app.example.com", true), false, "production must reject HTTP WebAuthn origin");

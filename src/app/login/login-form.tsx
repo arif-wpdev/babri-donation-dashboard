@@ -8,6 +8,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/types";
 import { useRouter } from "next/navigation";
 import { SuperAdminPhoneSetup } from "./super-admin-phone-setup";
+import { EmployeePhoneSetup } from "./employee-phone-setup";
 
 export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mfaEnabled: boolean }) {
   const router = useRouter();
@@ -315,6 +316,7 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
         {resetRequested && <form onSubmit={completePasswordReset} className="mt-3 flex flex-col gap-3"><input type="hidden" name="resetIdentifier" value={resetIdentifier} /><Input name="resetOtp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required placeholder="6-digit reset code" /><Input name="newPassword" type="password" autoComplete="new-password" minLength={12} required placeholder="New password (12+ chars, upper/lower/number)" /><button disabled={isPending} className="h-10 rounded-xl border">Reset password</button></form>}
       </details>}
       {step === "password" && <SuperAdminPhoneSetup />}
+      {step === "password" && <EmployeePhoneSetup />}
     </div>
   );
 }

@@ -6,9 +6,17 @@ import { z } from "zod";
 
 const createEmployeeSchema = z.object({
   name: z.string().min(2),
-  email: z.string().email(),
+  phone: z.string().min(8).max(24),
   password: z.string().min(12).max(256).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/),
 });
+
+function normalizeBangladeshPhone(input: string) {
+  const value = input.trim().replace(/[\s().-]/g, "");
+  if (/^01[3-9]\d{8}$/.test(value)) return `+88${value}`;
+  if (/^8801[3-9]\d{8}$/.test(value)) return `+${value}`;
+  if (/^\+8801[3-9]\d{8}$/.test(value)) return value;
+  return null;
+}
 
 /**
  * GET /api/team
@@ -45,7 +53,7 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         name: true,
-        email: true,
+        phone: true,
         role: true,
         createdAt: true,
       },
@@ -100,26 +108,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, email, password } = parsed.data;
+    const { name, password } = parsed.data;
+    const phone = normalizeBangladeshPhone(parsed.data.phone);
+    if (!phone) return Response.json({ error: "Enter a valid Bangladeshi mobile number." }, { status: 400 });
 
-    // Check email uniqueness
+    // Phone numbers, not email addresses, identify team login accounts.
     const existing = await prisma.user.findUnique({
-      where: { email },
+      where: { phone },
       select: { id: true },
     });
     if (existing) {
-      return Response.json(
-        { error: "A user with this email already exists" },
-        { status: 409 }
-      );
+      return Response.json({ error: "An account with this phone number already exists." }, { status: 409 });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    // The legacy Auth.js schema requires email. This reserved placeholder is
+    // internal only; the UI and all sign-in flows use the verified phone.
+    const internalEmail = `phone-${phone.replace(/\D/g, "")}@phone.invalid`;
 
     const newUser = await prisma.user.create({
       data: {
         name,
-        email,
+        email: internalEmail,
+        phone,
         passwordHash,
         role: "ORG_USER",
         orgId,
@@ -127,7 +138,7 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         name: true,
-        email: true,
+        phone: true,
         role: true,
         createdAt: true,
       },

@@ -19,7 +19,7 @@ export default function TeamPage() {
   
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
-  const [formData, setFormData] = useState({ name: "", email: "", password: "" });
+  const [formData, setFormData] = useState({ name: "", phone: "", password: "" });
   const [employeeToDelete, setEmployeeToDelete] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -59,7 +59,7 @@ export default function TeamPage() {
       
       toast.success("Employee account created successfully");
       setIsAddOpen(false);
-      setFormData({ name: "", email: "", password: "" });
+      setFormData({ name: "", phone: "", password: "" });
       fetchUsers();
     } catch (error: any) {
       toast.error(error.message || "An error occurred");
@@ -82,7 +82,7 @@ export default function TeamPage() {
         throw new Error(data.error || "Failed to delete employee");
       }
 
-      toast.success(`${employeeToDelete.name || employeeToDelete.email} was removed`);
+      toast.success(`${employeeToDelete.name || employeeToDelete.phone} was removed`);
       setUsers((currentUsers) => currentUsers.filter((user) => user.id !== employeeToDelete.id));
       setEmployeeToDelete(null);
     } catch (error: any) {
@@ -126,13 +126,14 @@ export default function TeamPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="email">Email Address</Label>
+                  <Label htmlFor="phone">Mobile Number</Label>
                   <Input 
-                    id="email" 
-                    type="email" 
-                    placeholder="john@example.com" 
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    placeholder="015XXXXXXXX"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
                     required
                   />
                 </div>
@@ -145,9 +146,9 @@ export default function TeamPage() {
                     value={formData.password}
                     onChange={(e) => setFormData({...formData, password: e.target.value})}
                     required
-                    minLength={6}
+                    minLength={12}
                   />
-                  <p className="text-xs text-muted-foreground">Password must be at least 6 characters long.</p>
+                  <p className="text-xs text-muted-foreground">Use 12+ characters with uppercase, lowercase and a number.</p>
                 </div>
               </div>
               <DialogFooter>
@@ -169,7 +170,7 @@ export default function TeamPage() {
           <TableHeader className="bg-muted/50">
             <TableRow className="hover:bg-transparent">
               <TableHead className="font-semibold text-foreground">Name</TableHead>
-              <TableHead className="font-semibold text-foreground">Email</TableHead>
+              <TableHead className="font-semibold text-foreground">Mobile Number</TableHead>
               <TableHead className="font-semibold text-foreground">Role</TableHead>
               <TableHead className="font-semibold text-foreground">Added On</TableHead>
               <TableHead className="text-right font-semibold text-foreground">Actions</TableHead>
@@ -180,7 +181,7 @@ export default function TeamPage() {
               Array.from({ length: 3 }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-4 w-[150px]" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-[180px]" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-[150px]" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-[80px] rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-[100px]" /></TableCell>
                   <TableCell><Skeleton className="h-8 w-8 ml-auto rounded-md" /></TableCell>
@@ -204,7 +205,7 @@ export default function TeamPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {user.email}
+                    {user.phone || "Not set"}
                   </TableCell>
                   <TableCell>
                     {user.role === "ORG_USER" ? (
@@ -229,7 +230,7 @@ export default function TeamPage() {
                         size="icon"
                         className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setEmployeeToDelete(user)}
-                        aria-label={`Remove ${user.name || user.email}`}
+                        aria-label={`Remove ${user.name || user.phone || "employee"}`}
                         title="Remove Employee"
                       >
                         <Trash2 className="size-4" />
@@ -254,7 +255,7 @@ export default function TeamPage() {
             <DialogTitle>Remove team member?</DialogTitle>
             <DialogDescription>
               {employeeToDelete
-                ? `${employeeToDelete.name || employeeToDelete.email} will lose access to this dashboard immediately.`
+                ? `${employeeToDelete.name || employeeToDelete.phone} will lose access to this dashboard immediately.`
                 : "This team member will lose access to this dashboard immediately."}
               {" "}This action cannot be undone.
             </DialogDescription>

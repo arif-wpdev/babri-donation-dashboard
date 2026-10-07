@@ -41,6 +41,8 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
     const isMfaBootstrap = pathname === "/api/auth/mfa/password"
       || pathname === "/api/auth/mfa/bootstrap-phone/request"
       || pathname === "/api/auth/mfa/bootstrap-phone/verify"
+      || pathname === "/api/auth/mfa/employee-phone/request"
+      || pathname === "/api/auth/mfa/employee-phone/verify"
       || pathname === "/api/auth/mfa/otp/request"
       || pathname === "/api/auth/mfa/otp/verify"
       || pathname === "/api/auth/mfa/passkey/login-options"

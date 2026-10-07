@@ -34,6 +34,14 @@ export function canBootstrapSuperAdminPhone(input: {
   return input.role === "SUPER_ADMIN" && Boolean(input.passwordHash) && input.phoneVerifiedAt === null;
 }
 
+export function canBootstrapEmployeePhone(input: {
+  role: string;
+  passwordHash: string | null;
+  phoneVerifiedAt: Date | null;
+}) {
+  return input.role === "ORG_USER" && Boolean(input.passwordHash) && input.phoneVerifiedAt === null;
+}
+
 export function isValidWebAuthnOriginConfig(originValue: string | undefined, rpID: string | undefined, production: boolean) {
   if (!originValue || !rpID) return false;
   try {
