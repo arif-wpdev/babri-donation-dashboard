@@ -10,6 +10,19 @@ interface WcSettings {
   hasTdfWebhookSecret?: boolean;
   syncEnabled: boolean;
   lastSyncedAt: string | null;
+  donorBackupEnabled: boolean;
+  donorBackupGoogleDriveEnabled: boolean;
+  donorBackupGoogleDriveFolderId: string;
+  hasDonorBackupGoogleCredentials: boolean;
+  donorBackupB2Enabled: boolean;
+  donorBackupB2Endpoint: string;
+  donorBackupB2Bucket: string;
+  donorBackupB2KeyId: string;
+  hasDonorBackupB2ApplicationKey: boolean;
+  donorBackupLastRunAt: string | null;
+  donorBackupLastStatus: string | null;
+  donorBackupLastError: string | null;
+  donorBackupLastCount: number | null;
 }
 
 export function useWcSettings() {
@@ -27,13 +40,32 @@ export function useUpdateWcSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: Partial<{ wcBaseUrl: string; wcConsumerKey: string; wcConsumerSecret: string; wcWebhookSecret: string; tdfApiKey: string; tdfWebhookSecret: string }>) => {
+    mutationFn: async (data: Partial<{
+      wcBaseUrl: string;
+      wcConsumerKey: string;
+      wcConsumerSecret: string;
+      wcWebhookSecret: string;
+      tdfApiKey: string;
+      tdfWebhookSecret: string;
+      donorBackupEnabled: boolean;
+      donorBackupGoogleDriveEnabled: boolean;
+      donorBackupGoogleDriveFolderId: string;
+      googleServiceAccountJson: string;
+      donorBackupB2Enabled: boolean;
+      donorBackupB2Endpoint: string;
+      donorBackupB2Bucket: string;
+      donorBackupB2KeyId: string;
+      b2ApplicationKey: string;
+    }>) => {
       const res = await fetch("/api/orgs/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update settings");
+      if (!res.ok) {
+        const result = await res.json().catch(() => null);
+        throw new Error(result?.error || "Failed to update settings");
+      }
       return res.json();
     },
     onSuccess: () => {

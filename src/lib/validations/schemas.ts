@@ -46,6 +46,7 @@ export const createOrgAdminSchema = z.object({
   password: z
     .string()
     .min(12, "Password must be at least 12 characters")
+    .max(256, "Password must be at most 256 characters")
     .regex(/[A-Z]/, "Must contain an uppercase letter")
     .regex(/[a-z]/, "Must contain a lowercase letter")
     .regex(/[0-9]/, "Must contain a number"),
@@ -92,9 +93,51 @@ export const donorFilterSchema = paginationSchema.extend({
   maxAmount: z.coerce.number().min(0).optional(),
   minCount: z.coerce.number().int().min(0).optional(),
   maxCount: z.coerce.number().int().min(0).optional(),
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
   sortBy: z.enum(["lastDonation", "totalSpent", "ordersCount"]).default("lastDonation"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
   fundId: z.string().optional(),
+}).refine((filters) => !filters.from || !filters.to || filters.from <= filters.to, {
+  message: "Start date must be on or before end date",
+  path: ["to"],
 });
 
 export type DonorFilterInput = z.infer<typeof donorFilterSchema>;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Facebook Ads Ledger
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const adLedgerEntrySchema = z.object({
+  type: z.enum(["TOP_UP", "SPEND"]),
+  amount: z.coerce.number().positive().finite().max(9999999999.99),
+  currency: z.literal("BDT").default("BDT"),
+  entryDate: z.iso.date(),
+  campaignName: z.string().trim().max(200).optional().or(z.literal("")),
+  reference: z.string().trim().max(200).optional().or(z.literal("")),
+  note: z.string().trim().max(2000).optional().or(z.literal("")),
+});
+
+export type AdLedgerEntryInput = z.infer<typeof adLedgerEntrySchema>;
+
+export const adLedgerQuerySchema = z.object({
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+});
+
+export const adSpendImportRowSchema = z.object({
+  date: z.iso.date(),
+  campaign: z.string().trim().max(200).optional().or(z.literal("")),
+  amount: z.coerce.number().positive().finite().max(9999999999.99),
+  currency: z.literal("BDT").default("BDT"),
+  reference: z.string().trim().max(200).optional().or(z.literal("")),
+  note: z.string().trim().max(2000).optional().or(z.literal("")),
+});
+
+export const adSpendImportSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  fileHash: z.string().regex(/^[a-f0-9]{64}$/i),
+  rows: z.array(adSpendImportRowSchema).min(1).max(5000),
+});

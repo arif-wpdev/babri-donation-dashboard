@@ -46,6 +46,11 @@ const navMain = [
         url: "/dashboard/donors",
         icon: Users,
       },
+      {
+        title: "Reports",
+        url: "/dashboard/reports",
+        icon: PieChart,
+      },
     ],
   },
 

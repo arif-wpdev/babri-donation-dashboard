@@ -9,6 +9,8 @@ interface DonorsParams {
   maxAmount?: number | "";
   minCount?: number | "";
   maxCount?: number | "";
+  from?: string;
+  to?: string;
   sortBy?: "lastDonation" | "totalSpent" | "ordersCount";
   sortOrder?: "asc" | "desc";
   fundId?: string | "all";
@@ -24,6 +26,8 @@ async function fetchDonors(params: DonorsParams) {
   if (params.maxAmount !== undefined && params.maxAmount !== "") query.set("maxAmount", String(params.maxAmount));
   if (params.minCount !== undefined && params.minCount !== "") query.set("minCount", String(params.minCount));
   if (params.maxCount !== undefined && params.maxCount !== "") query.set("maxCount", String(params.maxCount));
+  if (params.from) query.set("from", params.from);
+  if (params.to) query.set("to", params.to);
   if (params.sortBy) query.set("sortBy", params.sortBy);
   if (params.sortOrder) query.set("sortOrder", params.sortOrder);
   if (params.fundId && params.fundId !== "all") query.set("fundId", params.fundId);

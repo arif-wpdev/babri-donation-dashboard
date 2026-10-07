@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
 import { donorFilterSchema } from "@/lib/validations/schemas";
 import type { Prisma } from "@prisma/client";
+import { getDonorDonationDateBounds, matchesPeriodDonationFilters } from "@/lib/donor-date-filter";
 
 /**
  * GET /api/donors
@@ -50,6 +51,8 @@ export async function GET(request: NextRequest) {
       maxAmount: searchParams.get("maxAmount") ?? undefined,
       minCount: searchParams.get("minCount") ?? undefined,
       maxCount: searchParams.get("maxCount") ?? undefined,
+      from: searchParams.get("from") ?? undefined,
+      to: searchParams.get("to") ?? undefined,
       sortBy: searchParams.get("sortBy") ?? undefined,
       sortOrder: searchParams.get("sortOrder") ?? undefined,
       fundId: searchParams.get("fundId") ?? undefined,
@@ -62,10 +65,47 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { page, limit, search, minAmount, maxAmount, minCount, maxCount, sortBy, sortOrder, fundId } = parsed.data;
+    const { page, limit, search, minAmount, maxAmount, minCount, maxCount, from, to, sortBy, sortOrder, fundId } = parsed.data;
+    const { gte: dateFrom, lt: dateToExclusive } = getDonorDonationDateBounds(from, to);
+
+    const datedDonationWhere: Prisma.DonationWhereInput = {
+      status: "COMPLETED",
+      wcDatePaid: {
+        ...(dateFrom && { gte: dateFrom }),
+        ...(dateToExclusive && { lt: dateToExclusive }),
+      },
+      ...(fundId && { fundId }),
+    };
+
+    let donorIdsForDateRange: string[] | undefined;
+    let periodTotalsByDonor: Map<string, { amount: number; count: number }> | undefined;
+    if (from || to) {
+      const periodTotals = await prisma.donation.groupBy({
+        by: ["donorId"],
+        where: { orgId, donorId: { not: null }, ...datedDonationWhere },
+        _sum: { total: true },
+        _count: { _all: true },
+      });
+      periodTotalsByDonor = new Map(
+        periodTotals.flatMap((total) => total.donorId
+          ? [[total.donorId, { amount: Number(total._sum.total ?? 0), count: total._count._all }] as const]
+          : []),
+      );
+      donorIdsForDateRange = periodTotals
+        .filter((total) => total.donorId && matchesPeriodDonationFilters({
+          total: Number(total._sum.total ?? 0),
+          count: total._count._all,
+          minAmount,
+          maxAmount,
+          minCount,
+          maxCount,
+        }))
+        .flatMap((total) => total.donorId ? [total.donorId] : []);
+    }
 
     const where: Prisma.DonorWhereInput = {
       orgId,
+      ...(donorIdsForDateRange ? { id: { in: donorIdsForDateRange } } : {}),
       ...(search && {
         OR: [
           { firstName: { contains: search, mode: "insensitive" } },
@@ -75,26 +115,19 @@ export async function GET(request: NextRequest) {
           { normalizedPhone: { contains: search, mode: "insensitive" } },
         ],
       }),
-      ...( (minAmount !== undefined || maxAmount !== undefined) && {
+      ...( !(from || to) && (minAmount !== undefined || maxAmount !== undefined) && {
         totalSpent: {
           ...(minAmount !== undefined && { gte: minAmount }),
           ...(maxAmount !== undefined && { lte: maxAmount }),
         },
       }),
-      ...( (minCount !== undefined || maxCount !== undefined) && {
+      ...( !(from || to) && (minCount !== undefined || maxCount !== undefined) && {
         ordersCount: {
           ...(minCount !== undefined && { gte: minCount }),
           ...(maxCount !== undefined && { lte: maxCount }),
         },
       }),
-      ...(fundId && {
-        donations: {
-          some: {
-            fundId,
-            status: "COMPLETED",
-          }
-        }
-      })
+      ...(!(from || to) && fundId && { donations: { some: { fundId, status: "COMPLETED" } } }),
     };
 
     let orderByClause: Prisma.DonorOrderByWithRelationInput = {};
@@ -131,7 +164,7 @@ export async function GET(request: NextRequest) {
           donations: {
             take: 1,
             orderBy: { wcDatePaid: "desc" },
-            where: { status: "COMPLETED" },
+            where: datedDonationWhere,
             select: {
               utmSource: true,
               utmCampaign: true,
@@ -149,7 +182,10 @@ export async function GET(request: NextRequest) {
     ]);
 
     return Response.json({
-      data: donors,
+      data: donors.map((donor) => {
+        const periodTotals = periodTotalsByDonor?.get(donor.id);
+        return periodTotals ? { ...donor, periodDonationTotal: periodTotals.amount, periodDonationCount: periodTotals.count } : donor;
+      }),
       meta: {
         total,
         page,

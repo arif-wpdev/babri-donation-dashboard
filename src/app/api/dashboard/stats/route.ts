@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
 import { subMonths, startOfMonth, format } from "date-fns";
+import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,11 @@ export async function GET(request: NextRequest) {
         ...(toDate && { lte: toDate }),
       }
     } : {};
+    const completedDonationWhere: Prisma.DonationWhereInput = {
+      orgId,
+      status: "COMPLETED",
+      ...rangeWhere,
+    };
 
     // 1. Total KPIs (in range)
     const rangeDonationsCount = await prisma.donation.count({ 
@@ -241,6 +247,68 @@ export async function GET(request: NextRequest) {
         donorsCount: f.uniqueDonors.size
       })).sort((a, b) => b.amountRaised - a.amountRaised);
 
+    // Actual donation attribution. Blank/missing UTM values are grouped as Direct/Unattributed;
+    // this is donation revenue attribution, not ad-platform spend.
+    const [sourceGroups, campaignGroups] = await Promise.all([
+      prisma.donation.groupBy({
+        by: ["utmSource"],
+        where: completedDonationWhere,
+        _count: { _all: true },
+        _sum: { total: true },
+        orderBy: { _sum: { total: "desc" } },
+      }),
+      prisma.donation.groupBy({
+        by: ["utmCampaign", "utmSource"],
+        where: completedDonationWhere,
+        _count: { _all: true },
+        _sum: { total: true },
+        orderBy: { _sum: { total: "desc" } },
+      }),
+    ]);
+
+    // Only query platform IDs that fit the schema's Int columns; other numeric
+    // UTM campaign labels remain visible as their original IDs.
+    const campaignIds = Array.from(new Set(
+      campaignGroups
+        .map((group) => group.utmCampaign?.trim() ?? "")
+        .filter((value) => /^\d+$/.test(value) && Number(value) <= 2_147_483_647)
+        .map(Number),
+    ));
+    const campaignFunds = campaignIds.length
+      ? await prisma.fund.findMany({
+          where: {
+            orgId,
+            OR: [
+              { wcProductId: { in: campaignIds } },
+              { tdfFundId: { in: campaignIds } },
+            ],
+          },
+          select: { name: true, wcProductId: true, tdfFundId: true },
+        })
+      : [];
+    const campaignNames = new Map<number, string>();
+    for (const fund of campaignFunds) {
+      if (fund.wcProductId !== null) campaignNames.set(fund.wcProductId, fund.name);
+      if (fund.tdfFundId !== null) campaignNames.set(fund.tdfFundId, fund.name);
+    }
+
+    const sourceReport = sourceGroups.map((group) => ({
+      source: group.utmSource?.trim() || "Direct / Unattributed",
+      donations: group._count._all,
+      volume: Number(group._sum.total || 0),
+    }));
+    const campaignReport = campaignGroups.map((group) => ({
+      campaign: (() => {
+        const rawCampaign = group.utmCampaign?.trim() ?? "";
+        if (!rawCampaign || rawCampaign.toLowerCase() === "unknown") return "Unattributed";
+        if (/^\d+$/.test(rawCampaign)) return campaignNames.get(Number(rawCampaign)) ?? `Campaign ID ${rawCampaign}`;
+        return rawCampaign;
+      })(),
+      source: group.utmSource?.trim() || "Direct / Unattributed",
+      donations: group._count._all,
+      volume: Number(group._sum.total || 0),
+    }));
+
     return NextResponse.json({
       kpis: {
         totalRaised,
@@ -254,6 +322,8 @@ export async function GET(request: NextRequest) {
       },
       trend,
       fundBreakdown,
+      sourceReport,
+      campaignReport,
     });
   } catch (error) {
     if (error instanceof ApiError) {

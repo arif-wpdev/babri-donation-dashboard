@@ -4,6 +4,7 @@ import { Header } from "@/components/layout/header";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { requireStrongSession } from "@/lib/auth-security";
 
 export default async function DashboardLayout({
   children,
@@ -11,8 +12,11 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  if (!session?.user) {
-    redirect("/api/auth/signin");
+  if (!session?.user) redirect("/login");
+  try {
+    await requireStrongSession(session.user);
+  } catch {
+    redirect("/login");
   }
 
   return (

@@ -1,5 +1,9 @@
 import { auth } from "@/lib/auth";
 import type { Role } from "@prisma/client";
+import { requireStrongSession } from "@/lib/auth-security";
+import { prisma } from "@/lib/prisma";
+import { env } from "@/env";
+import { isStrongAuthSession } from "@/lib/auth-session-policy";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RBAC Helpers for Server Components and Route Handlers
@@ -11,10 +15,20 @@ import type { Role } from "@prisma/client";
  */
 export async function requireAuth() {
   const session = await auth();
-  if (!session?.user) {
+  if (!session?.user || !isStrongAuthSession(session.user, env.AUTH_MFA_ENABLED === "true")) {
     throw new ApiError("Unauthorized", 401);
   }
-  return session.user;
+  if (session.user.authSessionId) {
+    try {
+      return await requireStrongSession(session.user);
+    } catch {
+      throw new ApiError("Unauthorized", 401);
+    }
+  }
+  if (env.AUTH_MFA_ENABLED === "true") throw new ApiError("Unauthorized", 401);
+  const legacyUser = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, org: { select: { slug: true, deletedAt: true } } } });
+  if (!legacyUser || legacyUser.org?.deletedAt) throw new ApiError("Unauthorized", 401);
+  return { ...session.user, name: legacyUser.name, email: legacyUser.email, role: legacyUser.role, orgId: legacyUser.orgId, orgSlug: legacyUser.org?.slug ?? null };
 }
 
 /**

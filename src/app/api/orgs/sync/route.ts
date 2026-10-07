@@ -1,23 +1,26 @@
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { runSync } from "@/lib/sync";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/rbac";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user || !session.user.orgId) {
+    let user;
+    try { user = await requireAuth(); } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!user.orgId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Must be ORG_ADMIN or SUPER_ADMIN
-    if (session.user.role !== "ORG_ADMIN" && session.user.role !== "SUPER_ADMIN") {
+    if (user.role !== "ORG_ADMIN" && user.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const orgId = session.user.orgId;
+    const orgId = user.orgId;
 
     // Check if the org has sync credentials configured
     const org = await prisma.organization.findUnique({

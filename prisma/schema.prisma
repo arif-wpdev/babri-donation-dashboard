@@ -41,6 +41,21 @@ enum SyncTrigger {
   CRON
 }
 
+enum AdLedgerEntryType {
+  TOP_UP
+  SPEND
+}
+
+enum AdLedgerEntryStatus {
+  POSTED
+  VOID
+}
+
+enum AdLedgerEntrySource {
+  MANUAL
+  IMPORT
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ORGANIZATION — Top-level tenant
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +81,21 @@ model Organization {
   syncInterval Int       @default(360) /// Minutes between automatic syncs
   lastSyncedAt DateTime?
 
+  /// Daily donor backup configuration; provider secrets are encrypted with AES-256-GCM.
+  donorBackupEnabled             Boolean   @default(false)
+  donorBackupGoogleDriveEnabled  Boolean   @default(false)
+  donorBackupGoogleDriveFolderId String?
+  donorBackupGoogleCredentials   String?
+  donorBackupB2Enabled            Boolean   @default(false)
+  donorBackupB2Endpoint           String?
+  donorBackupB2Bucket             String?
+  donorBackupB2KeyId               String?
+  donorBackupB2ApplicationKey       String?
+  donorBackupLastRunAt              DateTime?
+  donorBackupLastStatus             String?
+  donorBackupLastError              String?   @db.Text
+  donorBackupLastCount               Int?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime? /// Soft delete — null = active
@@ -76,6 +106,8 @@ model Organization {
   donors    Donor[]
   donations Donation[]
   syncLogs  SyncLog[]
+  adLedgerEntries      AdLedgerEntry[]
+  adSpendImportBatches AdSpendImportBatch[]
 
   @@map("organizations")
 }
@@ -88,6 +120,9 @@ model User {
   id            String    @id @default(cuid())
   name          String?
   email         String    @unique
+  phone         String?   @unique
+  phoneVerifiedAt DateTime?
+  passwordChangedAt DateTime @default(now())
   emailVerified DateTime?
   image         String?
   passwordHash  String? /// Null when using OAuth only
@@ -104,8 +139,193 @@ model User {
   // NextAuth adapter relations
   accounts Account[]
   sessions Session[]
+  webAuthnCredentials WebAuthnCredential[]
+  trustedDevices TrustedDevice[]
+  authChallenges AuthChallenge[]
+  securityEvents SecurityEvent[]
+  authSessions AuthSession[]
+  loginTickets LoginTicket[]
+  loginPreAuth LoginPreAuth[]
+  recoveryCodes AuthRecoveryCode[]
+  adLedgerEntriesCreated AdLedgerEntry[]      @relation("AdLedgerEntryCreator")
+  adSpendImportBatches   AdSpendImportBatch[] @relation("AdSpendImportBatchImporter")
 
   @@map("users")
+}
+
+enum AuthChallengeType {
+  OTP
+  PHONE_VERIFICATION
+  PASSWORD_RESET
+  PASSKEY_REGISTRATION
+  PASSKEY_AUTHENTICATION
+}
+
+enum AuthEventType {
+  LOGIN_SUCCESS
+  PASSWORD_FAILURE
+  OTP_FAILURE
+  OTP_LOCK
+  OTP_SENT
+  PASSKEY_REGISTERED
+  PASSKEY_LOGIN_SUCCESS
+  DEVICE_REVOKED
+  LOGOUT
+  PASSWORD_CHANGED
+  NEW_DEVICE
+  SUSPICIOUS_ACTIVITY
+  OTP_REQUESTED
+  PASSWORD_RESET
+  PHONE_VERIFICATION
+}
+
+model AuthRecoveryCode {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String   @unique
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, usedAt])
+  @@map("auth_recovery_codes")
+}
+
+model AuthChallenge {
+  id               String            @id @default(cuid())
+  userId           String?
+  user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identifierHash   String
+  type             AuthChallengeType
+  otpHash          String?
+  challenge        String?
+  purpose          String?
+  loginTicketHash  String?
+  loginTicketExpiresAt DateTime?
+  failedAttempts   Int               @default(0)
+  lockedUntil      DateTime?
+  otpCreatedAt     DateTime?
+  otpExpiresAt     DateTime?
+  verifiedAt       DateTime?
+  consumedAt       DateTime?
+  deliveryChannel  String?
+  resendAfter      DateTime?
+  ipHash           String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([identifierHash, type, createdAt])
+  @@index([userId, type, createdAt])
+  @@unique([identifierHash, type])
+  @@map("auth_challenges")
+}
+
+model AuthSession {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId, revokedAt, expiresAt])
+  @@map("auth_sessions")
+}
+
+model LoginTicket {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preauthId String?
+  preauth LoginPreAuth? @relation(fields: [preauthId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+  @@map("login_tickets")
+}
+
+model LoginPreAuth {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tickets    LoginTicket[]
+  tokenHash  String   @unique
+  deliveryChannel String?
+  passkeyOnly Boolean @default(false)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, expiresAt])
+  @@map("login_pre_auth")
+}
+
+model WebAuthnCredential {
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId       String    @unique
+  publicKey          String    @db.Text
+  counter            BigInt    @default(0)
+  transports         String[]  @default([])
+  deviceType         String?
+  backedUp           Boolean   @default(false)
+  deviceName         String
+  credentialDeviceId String
+  createdAt          DateTime  @default(now())
+  lastUsedAt         DateTime?
+  revokedAt          DateTime?
+  trustedDevices     TrustedDevice[]
+
+  @@index([userId, revokedAt])
+  @@map("webauthn_credentials")
+}
+
+model TrustedDevice {
+  id           String            @id @default(cuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String
+  credential   WebAuthnCredential @relation(fields: [credentialId], references: [credentialId], onDelete: Cascade)
+  tokenHash    String            @unique
+  deviceType   String?
+  createdAt    DateTime          @default(now())
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+
+  @@index([userId, revokedAt])
+  @@map("trusted_devices")
+}
+
+model SecurityEvent {
+  id         String       @id @default(cuid())
+  userId     String?
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  eventType  AuthEventType
+  ipHash     String?
+  userAgent  String?      @db.VarChar(512)
+  deviceId   String?
+  details    Json?
+  createdAt  DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("security_events")
+}
+
+model AuthRateLimit {
+  key        String   @id
+  count      Int      @default(0)
+  windowEnds DateTime
+  blockedUntil DateTime?
+  updatedAt  DateTime @updatedAt
+
+  @@index([windowEnds])
+  @@map("auth_rate_limits")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -309,6 +529,67 @@ model SyncLog {
   @@map("sync_logs")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FACEBOOK ADS LEDGER — prepaid credits and daily spend, separate from donations
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AdLedgerEntry {
+  id String @id @default(cuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+
+  type     AdLedgerEntryType
+  status   AdLedgerEntryStatus @default(POSTED)
+  source   AdLedgerEntrySource @default(MANUAL)
+  amount   Decimal             @db.Decimal(12, 2)
+  currency String              @default("BDT")
+
+  /// Calendar day in Asia/Dhaka, stored as a date-only value.
+  entryDate    DateTime @db.Date
+  campaignName String?
+  reference    String?
+  note         String?  @db.Text
+
+  importBatchId String?
+  importBatch   AdSpendImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User? @relation("AdLedgerEntryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  voidedAt   DateTime?
+  voidReason String?  @db.Text
+
+  @@index([orgId, entryDate, status])
+  @@index([orgId, type, entryDate])
+  @@index([importBatchId])
+  @@map("ad_ledger_entries")
+}
+
+model AdSpendImportBatch {
+  id String @id @default(cuid())
+
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+
+  fileName  String
+  fileHash  String
+  rowCount  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  importedById String?
+  importedBy   User? @relation("AdSpendImportBatchImporter", fields: [importedById], references: [id], onDelete: SetNull)
+
+  entries AdLedgerEntry[]
+
+  @@unique([orgId, fileHash])
+  @@index([orgId, createdAt])
+  @@map("ad_spend_import_batches")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // NEXTAUTH ADAPTER TABLES
 // ─────────────────────────────────────────────────────────────────────────────

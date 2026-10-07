@@ -85,10 +85,11 @@ export default function DashboardPage() {
         isLoading={isLoading} 
         filter={filter}
         setFilter={setFilter}
+        dateRange={dateRange}
         customRange={customRange}
         setCustomRange={setCustomRange}
       />
-      
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
         {/* Left Column */}
         <div className="order-2 xl:order-1 xl:col-span-2 flex flex-col gap-4 lg:gap-6">

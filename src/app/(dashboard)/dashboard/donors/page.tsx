@@ -41,6 +41,8 @@ export default function DonorsDirectoryPage() {
   const [maxAmount, setMaxAmount] = useState<number | "">("");
   const [minCount, setMinCount] = useState<number | "">("");
   const [maxCount, setMaxCount] = useState<number | "">("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [sortBy, setSortBy] = useState<"lastDonation" | "totalSpent" | "ordersCount">("lastDonation");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [fundId, setFundId] = useState<string | "all">("all");
@@ -48,9 +50,9 @@ export default function DonorsDirectoryPage() {
   
   const { data: fundsData } = useFunds({ limit: 100 });
   
-  const { data, isLoading } = useDonors({ search, page, limit, minAmount, maxAmount, minCount, maxCount, sortBy, sortOrder, fundId });
+  const { data, isLoading } = useDonors({ search, page, limit, minAmount, maxAmount, minCount, maxCount, from, to, sortBy, sortOrder, fundId });
 
-  const activeFilterCount = [minAmount, maxAmount, minCount, maxCount].filter(v => v !== "").length + (fundId !== "all" ? 1 : 0);
+  const activeFilterCount = [minAmount, maxAmount, minCount, maxCount, from, to].filter(v => v !== "").length + (fundId !== "all" ? 1 : 0);
 
   const handleExport = async (exportFormat: "csv" | "excel" | "pdf") => {
     try {
@@ -64,6 +66,8 @@ export default function DonorsDirectoryPage() {
       if (maxAmount !== "") params.append("maxAmount", maxAmount.toString());
       if (minCount !== "") params.append("minCount", minCount.toString());
       if (maxCount !== "") params.append("maxCount", maxCount.toString());
+      if (from) params.append("from", from);
+      if (to) params.append("to", to);
       if (fundId !== "all") params.append("fundId", fundId);
       params.append("sortBy", sortBy);
       params.append("sortOrder", sortOrder);
@@ -86,8 +90,8 @@ export default function DonorsDirectoryPage() {
           Name: donor.firstName || donor.lastName ? `${donor.firstName || ""} ${donor.lastName || ""}`.trim() : (donor.email || donor.phone || donor.normalizedPhone || "Anonymous"),
           Email: donor.email || "-",
           Phone: donor.phone || donor.normalizedPhone || "-",
-          "Total Donation (Tk)": Number(donor.totalSpent || 0),
-          "Donations": donor.ordersCount || 0,
+          "Total Donation (Tk)": Number(donor.periodDonationTotal ?? donor.totalSpent ?? 0),
+          "Donations": donor.periodDonationCount ?? donor.ordersCount ?? 0,
           "Latest Fund": donor.donations?.[0]?.fund?.name || "General",
           "Last Donated": formattedDate,
           "Source": donor.donations?.[0]?.utmSource || "Direct",
@@ -260,12 +264,23 @@ export default function DonorsDirectoryPage() {
                   <div className="flex flex-col gap-4">
                     <div className="space-y-2">
                       <h4 className="font-semibold text-sm text-foreground">Filter & Sort Donors</h4>
-                      <p className="text-xs text-muted-foreground">Adjust filters to find specific donors.</p>
+                      <p className="text-xs text-muted-foreground">Choose donation dates; amount/count filters apply within that period.</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="donor-date-from" className="text-xs font-medium">Donation date from</label>
+                        <Input id="donor-date-from" type="date" value={from} max={to || undefined} onChange={(event) => { setFrom(event.target.value); setPage(1); }} />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="donor-date-to" className="text-xs font-medium">Donation date to</label>
+                        <Input id="donor-date-to" type="date" value={to} min={from || undefined} onChange={(event) => { setTo(event.target.value); setPage(1); }} />
+                      </div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Min Amount (৳)</span>
+                        <span className="text-xs font-medium">Min Amount (৳){from || to ? " in period" : " lifetime"}</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -275,7 +290,7 @@ export default function DonorsDirectoryPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Max Amount (৳)</span>
+                        <span className="text-xs font-medium">Max Amount (৳){from || to ? " in period" : " lifetime"}</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -288,7 +303,7 @@ export default function DonorsDirectoryPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Min Donations</span>
+                        <span className="text-xs font-medium">Min Donations{from || to ? " in period" : " lifetime"}</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -298,7 +313,7 @@ export default function DonorsDirectoryPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Max Donations</span>
+                        <span className="text-xs font-medium">Max Donations{from || to ? " in period" : " lifetime"}</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -369,6 +384,8 @@ export default function DonorsDirectoryPage() {
                           setMaxAmount("");
                           setMinCount("");
                           setMaxCount("");
+                          setFrom("");
+                          setTo("");
                           setSortBy("lastDonation");
                           setSortOrder("desc");
                           setFundId("all");
@@ -457,7 +474,7 @@ export default function DonorsDirectoryPage() {
                             {/* Mobile-only additional info */}
                             <div className="md:hidden flex flex-col text-[11px] text-muted-foreground ml-11 gap-0.5">
                               <div className="text-[13px] font-semibold text-foreground tracking-tight">
-                                ৳{Number(donor.totalSpent || 0).toLocaleString()}
+                                ৳{Number(donor.periodDonationTotal ?? donor.totalSpent ?? 0).toLocaleString()}
                               </div>
                               {(donor.phone || donor.normalizedPhone) && (
                                 <span>{donor.phone || donor.normalizedPhone}</span>
@@ -468,7 +485,7 @@ export default function DonorsDirectoryPage() {
                                 <span>{formattedDate}</span>
                               </div>
                               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                                <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donor.ordersCount || 0} Donations</span>
+                                <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donor.periodDonationCount ?? donor.ordersCount ?? 0} Donations</span>
                                 {donor.donations?.[0]?.utmSource && (
                                   <span className="bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded text-[10px]">{donor.donations?.[0]?.utmSource || "Direct"}</span>
                                 )}
@@ -484,10 +501,10 @@ export default function DonorsDirectoryPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold text-foreground align-top md:align-middle hidden md:table-cell">
-                          ৳{Number(donor.totalSpent || 0).toLocaleString()}
+                          ৳{Number(donor.periodDonationTotal ?? donor.totalSpent ?? 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-center font-medium hidden md:table-cell">
-                          {donor.ordersCount || 0}
+                          {donor.periodDonationCount ?? donor.ordersCount ?? 0}
                         </TableCell>
                         <TableCell className="text-sm hidden md:table-cell">
                           <div className="flex flex-col">

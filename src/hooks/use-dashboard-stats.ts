@@ -14,6 +14,8 @@ export interface DashboardStats {
   };
   trend: Array<{ name: string; raised: number }>;
   fundBreakdown: Array<{ fundName: string; amountRaised: number; donorsCount: number }>;
+  sourceReport: Array<{ source: string; donations: number; volume: number }>;
+  campaignReport: Array<{ campaign: string; source: string; donations: number; volume: number }>;
 }
 
 export function useDashboardStats(dateRange?: DateRange | null) {

@@ -7,7 +7,7 @@ import { z } from "zod";
 const createEmployeeSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(12).max(256).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/),
 });
 
 /**

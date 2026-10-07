@@ -1,27 +1,10 @@
-import { signIn } from "@/lib/auth";
-import { AuthError } from "next-auth";
 import { LoginForm } from "./login-form";
+import { env } from "@/env";
 
 export default async function LoginPage(props: { searchParams: Promise<{ callbackUrl: string | undefined }> }) {
   const searchParams = await props.searchParams;
-  const callbackUrl = searchParams?.callbackUrl || "/dashboard";
-
-  async function authenticate(formData: FormData) {
-    "use server";
-    try {
-      await signIn("credentials", formData);
-    } catch (error) {
-      if (error instanceof AuthError) {
-        switch (error.type) {
-          case "CredentialsSignin":
-            return "Invalid email or password.";
-          default:
-            return "Something went wrong.";
-        }
-      }
-      throw error;
-    }
-  }
+  const requestedCallback = searchParams?.callbackUrl || "/dashboard";
+  const callbackUrl = requestedCallback.startsWith("/") && !requestedCallback.startsWith("//") ? requestedCallback : "/dashboard";
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background/50 relative overflow-hidden">
@@ -44,7 +27,7 @@ export default async function LoginPage(props: { searchParams: Promise<{ callbac
           </p>
         </div>
 
-        <LoginForm authenticate={authenticate} callbackUrl={callbackUrl} />
+        <LoginForm callbackUrl={callbackUrl} mfaEnabled={env.AUTH_MFA_ENABLED === "true"} />
       </div>
     </div>
   );

@@ -9,17 +9,21 @@ import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { DateRange } from "react-day-picker";
 import type { FilterPreset } from "@/app/(dashboard)/dashboard/page";
+import { useAdSpend } from "@/hooks/use-ad-spend";
 
 interface KpiCardsProps {
   data?: DashboardStats["kpis"];
   isLoading: boolean;
   filter: FilterPreset;
   setFilter: (f: FilterPreset) => void;
+  dateRange: DateRange | null;
   customRange: DateRange | undefined;
   setCustomRange: (range: DateRange | undefined) => void;
 }
 
-export function KpiCards({ data, isLoading, filter, setFilter, customRange, setCustomRange }: KpiCardsProps) {
+export function KpiCards({ data, isLoading, filter, setFilter, dateRange, customRange, setCustomRange }: KpiCardsProps) {
+  const { data: adSpendData, isLoading: isAdSpendLoading, isError: isAdSpendError } = useAdSpend(dateRange);
+
   const tabs: { value: FilterPreset; label: string }[] = [
     { value: "today", label: "Today" },
     { value: "yesterday", label: "Yesterday" },
@@ -87,6 +91,9 @@ export function KpiCards({ data, isLoading, filter, setFilter, customRange, setC
              <span className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider truncate">Total Donations</span>
              <span className="text-2xl md:text-3xl lg:text-4xl font-bold tracking-tight text-foreground truncate">
                {isLoading ? <Skeleton className="h-8 w-24" /> : formatNumber(data?.totalRaised || 0, true, false)}
+             </span>
+             <span className="mt-1 text-xs md:text-sm font-medium text-emerald-800 truncate">
+               Ad Spend: {isAdSpendLoading ? "Loading…" : isAdSpendError ? "Unavailable" : formatNumber(adSpendData?.periodSpend || 0, true, false)}
              </span>
           </div>
 

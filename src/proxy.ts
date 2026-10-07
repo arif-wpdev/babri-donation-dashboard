@@ -2,6 +2,8 @@ import NextAuth from "next-auth";
 import { authConfig } from "@/auth.config";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { env } from "@/env";
+import { isStrongAuthSession } from "@/lib/auth-session-policy";
 
 const { auth } = NextAuth(authConfig);
 
@@ -13,7 +15,7 @@ const { auth } = NextAuth(authConfig);
 // /super-admin/**            → SUPER_ADMIN only
 // /api/orgs POST             → SUPER_ADMIN only
 // /api/cron/**               → CRON_SECRET header only (no session required)
-// /api/auth/**               → Always public (NextAuth handlers)
+// /api/auth/**               → NextAuth public; MFA bootstrap routes public; other MFA routes require strong session
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A) => unknown) ? A[0] : never) => {
@@ -21,6 +23,9 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
   const pathname = nextUrl.pathname;
   const isAuthenticated = !!session?.user;
   const role = session?.user?.role;
+  // Proxy does the cheap signed-cookie check. Route handlers and server layouts
+  // perform the authoritative revocation lookup via requireStrongSession().
+  const isStrongAuthenticated = isStrongAuthSession(session?.user ?? null, env.AUTH_MFA_ENABLED === "true");
 
   // ── Cron routes: authenticated by Vercel cron secret ──────────────────────
   if (pathname.startsWith("/api/cron")) {
@@ -32,8 +37,20 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
   }
 
   // ── NextAuth internal routes: always allow ────────────────────────────────
-  if (pathname.startsWith("/api/auth")) {
-    return NextResponse.next();
+  if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) {
+    const isMfaBootstrap = pathname === "/api/auth/mfa/password"
+      || pathname === "/api/auth/mfa/bootstrap-phone/request"
+      || pathname === "/api/auth/mfa/bootstrap-phone/verify"
+      || pathname === "/api/auth/mfa/otp/request"
+      || pathname === "/api/auth/mfa/otp/verify"
+      || pathname === "/api/auth/mfa/passkey/login-options"
+      || pathname === "/api/auth/mfa/passkey/login-verify"
+      || pathname === "/api/auth/mfa/recovery/verify"
+      || pathname === "/api/auth/mfa/password-reset/request"
+      || pathname === "/api/auth/mfa/password-reset/verify"
+      || pathname === "/api/auth/mfa/session";
+    if (!pathname.startsWith("/api/auth/mfa/") || isMfaBootstrap || isStrongAuthenticated) return NextResponse.next();
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // ── Webhook routes: authenticated by signature ────────────────────────────
@@ -43,17 +60,22 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
 
   // ── Auth pages: redirect authenticated users ──────────────────────────────
   if (pathname === "/login" || pathname === "/register") {
-    if (isAuthenticated) {
+    if (isStrongAuthenticated) {
       const destination =
         role === "SUPER_ADMIN" ? "/super-admin/organizations" : "/dashboard";
       return NextResponse.redirect(new URL(destination, nextUrl));
+    }
+    if (isAuthenticated && !isStrongAuthenticated) {
+      const response = NextResponse.next();
+      response.cookies.delete(process.env.NODE_ENV === "production" ? "__Host-authjs.session-token" : "authjs.session-token");
+      return response;
     }
     return NextResponse.next();
   }
 
   // ── Super Admin routes ────────────────────────────────────────────────────
   if (pathname.startsWith("/super-admin")) {
-    if (!isAuthenticated) {
+    if (!isStrongAuthenticated) {
       return NextResponse.redirect(new URL("/login", nextUrl));
     }
     if (role !== "SUPER_ADMIN") {
@@ -64,7 +86,7 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
 
   // ── Dashboard routes: any authenticated user ──────────────────────────────
   if (pathname.startsWith("/dashboard")) {
-    if (!isAuthenticated) {
+    if (!isStrongAuthenticated) {
       const loginUrl = new URL("/login", nextUrl);
       loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
@@ -74,7 +96,7 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
 
   // ── Protected API routes ──────────────────────────────────────────────────
   if (pathname.startsWith("/api/")) {
-    if (!isAuthenticated) {
+    if (!isStrongAuthenticated) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     return NextResponse.next();

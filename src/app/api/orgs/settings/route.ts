@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/encryption";
+import { requireAuth } from "@/lib/rbac";
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user || !session.user.orgId) {
-      return NextResponse.json({ error: "Unauthorized or missing organization" }, { status: 401 });
-    }
-
-    const orgId = session.user.orgId;
+    let session;
+    try { session = await requireAuth(); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    if (!session.orgId) return NextResponse.json({ error: "Unauthorized or missing organization" }, { status: 401 });
+    const orgId = session.orgId;
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
@@ -22,6 +20,19 @@ export async function GET(req: NextRequest) {
         tdfWebhookSecret: true,
         syncEnabled: true,
         lastSyncedAt: true,
+        donorBackupEnabled: true,
+        donorBackupGoogleDriveEnabled: true,
+        donorBackupGoogleDriveFolderId: true,
+        donorBackupGoogleCredentials: true,
+        donorBackupB2Enabled: true,
+        donorBackupB2Endpoint: true,
+        donorBackupB2Bucket: true,
+        donorBackupB2KeyId: true,
+        donorBackupB2ApplicationKey: true,
+        donorBackupLastRunAt: true,
+        donorBackupLastStatus: true,
+        donorBackupLastError: true,
+        donorBackupLastCount: true,
       }
     });
 
@@ -55,6 +66,19 @@ export async function GET(req: NextRequest) {
       hasTdfWebhookSecret: !!org.tdfWebhookSecret,
       syncEnabled: org.syncEnabled,
       lastSyncedAt: org.lastSyncedAt,
+      donorBackupEnabled: org.donorBackupEnabled,
+      donorBackupGoogleDriveEnabled: org.donorBackupGoogleDriveEnabled,
+      hasDonorBackupGoogleCredentials: !!org.donorBackupGoogleCredentials,
+      donorBackupGoogleDriveFolderId: org.donorBackupGoogleDriveFolderId ?? "",
+      donorBackupB2Enabled: org.donorBackupB2Enabled,
+      donorBackupB2Endpoint: org.donorBackupB2Endpoint ?? "",
+      donorBackupB2Bucket: org.donorBackupB2Bucket ?? "",
+      donorBackupB2KeyId: org.donorBackupB2KeyId ?? "",
+      hasDonorBackupB2ApplicationKey: !!org.donorBackupB2ApplicationKey,
+      donorBackupLastRunAt: org.donorBackupLastRunAt,
+      donorBackupLastStatus: org.donorBackupLastStatus,
+      donorBackupLastError: session.role === "ORG_USER" ? null : org.donorBackupLastError,
+      donorBackupLastCount: org.donorBackupLastCount,
     });
   } catch (error: any) {
     console.error("[SETTINGS_GET]", error);
@@ -64,17 +88,22 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user || !session.user.orgId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    let session;
+    try { session = await requireAuth(); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    if (!session.orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (session.user.role !== "ORG_ADMIN" && session.user.role !== "SUPER_ADMIN") {
+    if (session.role !== "ORG_ADMIN" && session.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await req.json();
-    const { wcBaseUrl, wcConsumerKey, wcConsumerSecret, wcWebhookSecret, tdfApiKey, tdfWebhookSecret } = body;
+    const {
+      wcBaseUrl, wcConsumerKey, wcConsumerSecret, wcWebhookSecret, tdfApiKey, tdfWebhookSecret,
+      donorBackupEnabled, donorBackupGoogleDriveEnabled, donorBackupGoogleDriveFolderId,
+      googleServiceAccountJson, donorBackupB2Enabled, donorBackupB2Endpoint,
+      donorBackupB2Bucket, donorBackupB2KeyId,
+      b2ApplicationKey,
+    } = body;
 
     const updateData: any = {};
     if (wcBaseUrl !== undefined) updateData.wcBaseUrl = wcBaseUrl;
@@ -105,12 +134,72 @@ export async function PUT(req: NextRequest) {
       updateData.tdfWebhookSecret = tdfWebhookSecret === "" ? null : tdfWebhookSecret;
     }
 
+    if (donorBackupEnabled !== undefined) updateData.donorBackupEnabled = !!donorBackupEnabled;
+    if (donorBackupGoogleDriveEnabled !== undefined) updateData.donorBackupGoogleDriveEnabled = !!donorBackupGoogleDriveEnabled;
+    if (donorBackupGoogleDriveFolderId !== undefined) updateData.donorBackupGoogleDriveFolderId = donorBackupGoogleDriveFolderId || null;
+    if (typeof googleServiceAccountJson === "string" && googleServiceAccountJson.trim()) {
+      try {
+        JSON.parse(googleServiceAccountJson);
+      } catch {
+        return NextResponse.json({ error: "Google service account must be valid JSON" }, { status: 400 });
+      }
+      updateData.donorBackupGoogleCredentials = encrypt(googleServiceAccountJson.trim());
+    }
+    if (donorBackupB2Enabled !== undefined) updateData.donorBackupB2Enabled = !!donorBackupB2Enabled;
+    if (donorBackupB2Endpoint !== undefined) updateData.donorBackupB2Endpoint = donorBackupB2Endpoint || null;
+    if (donorBackupB2Bucket !== undefined) updateData.donorBackupB2Bucket = donorBackupB2Bucket || null;
+    if (donorBackupB2KeyId !== undefined) updateData.donorBackupB2KeyId = donorBackupB2KeyId || null;
+    if (typeof b2ApplicationKey === "string" && b2ApplicationKey.trim()) {
+      updateData.donorBackupB2ApplicationKey = encrypt(b2ApplicationKey.trim());
+    }
+
+    const currentOrg = await prisma.organization.findUnique({
+      where: { id: session.orgId },
+      select: {
+        donorBackupEnabled: true,
+        donorBackupGoogleDriveEnabled: true,
+        donorBackupGoogleDriveFolderId: true,
+        donorBackupGoogleCredentials: true,
+        donorBackupB2Enabled: true,
+        donorBackupB2Endpoint: true,
+        donorBackupB2Bucket: true,
+        donorBackupB2KeyId: true,
+        donorBackupB2ApplicationKey: true,
+      },
+    });
+    if (!currentOrg) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    const backupConfig = {
+      ...currentOrg,
+      ...updateData,
+      donorBackupGoogleDriveEnabled: updateData.donorBackupGoogleDriveEnabled ?? currentOrg.donorBackupGoogleDriveEnabled,
+      donorBackupGoogleDriveFolderId: updateData.donorBackupGoogleDriveFolderId ?? currentOrg.donorBackupGoogleDriveFolderId,
+      donorBackupGoogleCredentials: updateData.donorBackupGoogleCredentials ?? currentOrg.donorBackupGoogleCredentials,
+      donorBackupB2Enabled: updateData.donorBackupB2Enabled ?? currentOrg.donorBackupB2Enabled,
+      donorBackupB2Endpoint: updateData.donorBackupB2Endpoint ?? currentOrg.donorBackupB2Endpoint,
+      donorBackupB2Bucket: updateData.donorBackupB2Bucket ?? currentOrg.donorBackupB2Bucket,
+      donorBackupB2KeyId: updateData.donorBackupB2KeyId ?? currentOrg.donorBackupB2KeyId,
+      donorBackupB2ApplicationKey: updateData.donorBackupB2ApplicationKey ?? currentOrg.donorBackupB2ApplicationKey,
+    };
+    const backupEnabled = updateData.donorBackupEnabled ?? currentOrg.donorBackupEnabled;
+    const googleEnabled = updateData.donorBackupGoogleDriveEnabled ?? currentOrg.donorBackupGoogleDriveEnabled;
+    const b2Enabled = updateData.donorBackupB2Enabled ?? currentOrg.donorBackupB2Enabled;
+    const anyProviderEnabled = googleEnabled || b2Enabled;
+    if (backupEnabled && !anyProviderEnabled) {
+      return NextResponse.json({ error: "Enable at least one backup destination before enabling daily backups" }, { status: 400 });
+    }
+    if (googleEnabled && (!backupConfig.donorBackupGoogleDriveFolderId || !backupConfig.donorBackupGoogleCredentials)) {
+      return NextResponse.json({ error: "Configure Google Drive folder and service-account JSON before enabling backups" }, { status: 400 });
+    }
+    if (b2Enabled && (!backupConfig.donorBackupB2Endpoint || !backupConfig.donorBackupB2Bucket || !backupConfig.donorBackupB2KeyId || !backupConfig.donorBackupB2ApplicationKey)) {
+      return NextResponse.json({ error: "Configure the B2 endpoint, bucket and credentials before enabling backups" }, { status: 400 });
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: true, message: "No changes needed" });
     }
 
     await prisma.organization.update({
-      where: { id: session.user.orgId },
+      where: { id: session.orgId! },
       data: updateData
     });
 
