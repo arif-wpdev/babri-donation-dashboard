@@ -250,7 +250,7 @@ export function LoginForm({ callbackUrl, mfaEnabled }: { callbackUrl: string; mf
           type="tel"
           inputMode="tel"
           autoComplete="tel"
-          placeholder="+8801XXXXXXXXX"
+          placeholder="01XXXXXXXXX"
           required
           className="h-11 rounded-xl bg-background/50"
         />

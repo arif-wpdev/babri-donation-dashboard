@@ -5,7 +5,7 @@ import { env } from "@/env";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { clearPreAuth, ensureSameOrigin, enforceRateLimits, getTrustedDeviceCredential, hashAuthValue, isMfaConfigurationReady, isOtpDeliveryReady, normalizeIdentifier, prefersMobileAuthFlow, requestIp, writeSecurityEvent, issuePreAuth, webAuthnConfiguration } from "@/lib/auth-security";
 
-const bodySchema = z.object({ identifier: z.string().min(8).max(16), password: z.string().min(12).max(256) });
+const bodySchema = z.object({ identifier: z.string().min(8).max(24), password: z.string().min(12).max(256) });
 
 export async function POST(request: Request) {
   try {
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const parsed = bodySchema.safeParse(await request.json());
     if (!parsed.success) return Response.json({ error: "Invalid sign-in details" }, { status: 400 });
     const identifier = normalizeIdentifier(parsed.data.identifier);
-    if (!/^\+[1-9]\d{7,14}$/.test(identifier)) return Response.json({ error: "Enter a valid phone number with country code." }, { status: 400 });
+    if (!/^\+[1-9]\d{7,14}$/.test(identifier)) return Response.json({ error: "Enter a valid phone number." }, { status: 400 });
     const ip = requestIp(request.headers);
     const ipHash = hashAuthValue(ip, "ip");
     const rate = await enforceRateLimits([

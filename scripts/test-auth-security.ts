@@ -37,6 +37,9 @@ sanitizeSecurityEventDetails,
 	assert.equal(verifyOtpHash(hashAuthValue(otp, "otp"), wrongOtp), false);
 	assert.equal(normalizeIdentifier("008801234567890"), "+8801234567890");
 	assert.equal(normalizeIdentifier("+880 1234-567890"), "+8801234567890");
+	assert.equal(normalizeIdentifier("01521434555"), "+8801521434555", "Bangladesh local phone should be accepted and canonicalized");
+	assert.equal(normalizeIdentifier("+8801521434555"), "+8801521434555", "international phone should remain canonical");
+	assert.equal(normalizeIdentifier("8801521434555"), "+8801521434555", "880-prefixed phone should canonicalize to E.164");
 
 	const otpHash = hashAuthValue(otp, "otp");
 	assert.notEqual(otpHash, otp);

@@ -18,7 +18,11 @@ export function normalizeIdentifier(input: string) {
   const value = input.trim();
   if (value.includes("@")) return value.toLowerCase();
   const normalized = value.replace(/[\s().-]/g, "");
-  return normalized.startsWith("00") ? `+${normalized.slice(2)}` : normalized;
+  if (normalized.startsWith("00")) return `+${normalized.slice(2)}`;
+  if (normalized.startsWith("+")) return normalized;
+  if (/^01[3-9]\d{8}$/.test(normalized)) return `+88${normalized}`;
+  if (/^8801[3-9]\d{8}$/.test(normalized)) return `+${normalized}`;
+  return normalized;
 }
 
 const sensitiveAuditKey = /(password|otp|token|secret|credential|authorization|code|email|phone|destination|identifier|cookie)/i;

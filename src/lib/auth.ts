@@ -43,7 +43,7 @@ declare module "next-auth" {
 // Validation schema for credentials
 // ─────────────────────────────────────────────────────────────────────────────
 const credentialsSchema = z.object({
-  identifier: z.string().min(3).max(254),
+  identifier: z.string().min(8).max(254),
   password: z.string().min(12),
   loginTicket: z.string().optional(),
 });

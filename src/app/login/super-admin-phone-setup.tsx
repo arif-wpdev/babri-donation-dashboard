@@ -12,6 +12,7 @@ export function SuperAdminPhoneSetup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
+  const canonicalPhone = phone.replace(/[\s().-]/g, "").replace(/^01([3-9]\d{8})$/, "+8801$1").replace(/^880(1[3-9]\d{8})$/, "+880$1");
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -25,7 +26,7 @@ export function SuperAdminPhoneSetup() {
       const response = await fetch("/api/auth/mfa/bootstrap-phone/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, phone }),
+        body: JSON.stringify({ email, password, phone: canonicalPhone }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not request phone verification");
@@ -81,8 +82,8 @@ export function SuperAdminPhoneSetup() {
         <form onSubmit={requestCode} className="flex flex-col gap-3">
           <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-email">Super Admin account email</Label><Input id="bootstrap-admin-email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></div>
           <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-password">Account password</Label><Input id="bootstrap-admin-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></div>
-          <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-phone">Phone to verify</Label><Input id="bootstrap-admin-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+8801XXXXXXXXX" required value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
-          <Button type="submit" variant="outline" disabled={busy || !/^\+[1-9]\d{7,14}$/.test(phone)}>{busy && <Loader2 className="mr-2 size-4 animate-spin" />}Send verification code</Button>
+          <div className="space-y-1.5"><Label htmlFor="bootstrap-admin-phone">Phone to verify</Label><Input id="bootstrap-admin-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="015XXXXXXXX" required value={phone} onChange={(event) => setPhone(event.target.value)} /></div>
+          <Button type="submit" variant="outline" disabled={busy || !/^\+[1-9]\d{7,14}$/.test(canonicalPhone)}>{busy && <Loader2 className="mr-2 size-4 animate-spin" />}Send verification code</Button>
         </form>
       ) : (
         <form onSubmit={verifyCode} className="flex flex-col gap-3">
