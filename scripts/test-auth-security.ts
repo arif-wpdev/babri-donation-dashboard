@@ -23,13 +23,14 @@ void Promise.all([
 	OTP_LOCK_DURATION_MS,
 	getOtpRequestBlock,
 	isOtpChallengeUsable,
+	isWebAuthnConfigurationReady,
 	nextOtpFailure,
 	evaluateRateLimit,
 	isPasskeyChallengeUsable,
 	isCredentialTrustedForUser,
 	prefersMobileAuthFlow,
 sanitizeSecurityEventDetails,
-	}, { isStrongAuthSession, isActiveSessionRecord, isLoginTicketCurrent, clearExpiredOtpLock, canBootstrapSuperAdminPhone }, { isGreenwebSmsAccepted }, { getDonorDonationDateBounds, matchesPeriodDonationFilters }]) => {
+	}, { isStrongAuthSession, isActiveSessionRecord, isLoginTicketCurrent, clearExpiredOtpLock, canBootstrapSuperAdminPhone, isValidWebAuthnOriginConfig }, { isGreenwebSmsAccepted }, { getDonorDonationDateBounds, matchesPeriodDonationFilters }]) => {
 	const otp = randomOtp();
 	assert.match(otp, /^\d{6}$/);
 	assert.equal(verifyOtpHash(hashAuthValue(otp, "otp"), otp), true);
@@ -139,6 +140,11 @@ sanitizeSecurityEventDetails,
 	assert.equal(canBootstrapSuperAdminPhone({ role: "ORG_ADMIN", passwordHash: "bcrypt-hash", phoneVerifiedAt: null }), false, "organization admins cannot use the bootstrap route");
 	assert.equal(canBootstrapSuperAdminPhone({ role: "SUPER_ADMIN", passwordHash: null, phoneVerifiedAt: null }), false, "passwordless accounts cannot use bootstrap");
 	assert.equal(canBootstrapSuperAdminPhone({ role: "SUPER_ADMIN", passwordHash: "bcrypt-hash", phoneVerifiedAt: now }), false, "verified accounts cannot replace their phone through bootstrap");
+	assert.equal(isValidWebAuthnOriginConfig("http://localhost:3000", "localhost", false), true, "local WebAuthn origin should be valid during development");
+	assert.equal(isValidWebAuthnOriginConfig("https://app.example.com", "app.example.com", true), true, "production HTTPS origin should accept its host RP ID");
+	assert.equal(isValidWebAuthnOriginConfig("http://app.example.com", "app.example.com", true), false, "production must reject HTTP WebAuthn origin");
+	assert.equal(isValidWebAuthnOriginConfig("https://app.example.com", "other.example.com", true), false, "RP ID outside the origin domain must be rejected");
+	assert.equal(isValidWebAuthnOriginConfig(undefined, "localhost", false), false, "missing origin must keep passkey registration unavailable");
 
 	assert.deepEqual(sanitizeSecurityEventDetails({ action: "passkey_authentication_failure", attempts: 2, password: "secret", otp: "123456", phone: "+8801712345678", email: "user@example.com" }), {
 		action: "passkey_authentication_failure",

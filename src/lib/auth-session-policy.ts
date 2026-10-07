@@ -33,3 +33,16 @@ export function canBootstrapSuperAdminPhone(input: {
 }) {
   return input.role === "SUPER_ADMIN" && Boolean(input.passwordHash) && input.phoneVerifiedAt === null;
 }
+
+export function isValidWebAuthnOriginConfig(originValue: string | undefined, rpID: string | undefined, production: boolean) {
+  if (!originValue || !rpID) return false;
+  try {
+    const origin = new URL(originValue);
+    if (origin.pathname !== "/" || origin.search || origin.hash || origin.username || origin.password) return false;
+    if (production && origin.protocol !== "https:") return false;
+    if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/i.test(rpID)) return false;
+    return rpID === origin.hostname || origin.hostname.endsWith(`.${rpID}`);
+  } catch {
+    return false;
+  }
+}

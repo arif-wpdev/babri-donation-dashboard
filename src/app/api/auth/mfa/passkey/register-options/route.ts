@@ -1,14 +1,14 @@
 import { generateRegistrationOptions } from "@simplewebauthn/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import { ensureSameOrigin, enforceRateLimits, hashAuthValue, isMfaConfigurationReady, requestIp, webAuthnConfiguration, writeSecurityEvent } from "@/lib/auth-security";
+import { ensureSameOrigin, enforceRateLimits, hashAuthValue, isWebAuthnConfigurationReady, requestIp, webAuthnConfiguration, writeSecurityEvent } from "@/lib/auth-security";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
     ensureSameOrigin(request);
-    if (!isMfaConfigurationReady()) return Response.json({ error: "Passkey registration is unavailable" }, { status: 503 });
+    if (!isWebAuthnConfigurationReady(request)) return Response.json({ error: "Passkey registration is unavailable. Check the configured HTTPS origin and WebAuthn RP ID." }, { status: 503 });
     const user = await requireAuth();
     const ip = requestIp(request.headers);
     const rate = await enforceRateLimits([

@@ -5,7 +5,7 @@ import { sendGreenwebOtp } from "@/lib/greenweb-sms";
 import type { AuthEventType, Role } from "@prisma/client";
 import { cookies } from "next/headers";
 import type { AuthenticatorDevice } from "@simplewebauthn/types";
-import { isActiveSessionRecord } from "@/lib/auth-session-policy";
+import { isActiveSessionRecord, isValidWebAuthnOriginConfig } from "@/lib/auth-session-policy";
 
 const otpHashSecret = () => env.AUTH_OTP_HASH_KEY || env.AUTH_SECRET;
 const rateHashSecret = () => env.AUTH_RATE_LIMIT_HMAC_KEY || env.AUTH_SECRET;
@@ -189,6 +189,17 @@ export function webAuthnConfiguration(request?: Request) {
   if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/i.test(rpID)) throw new Error("Invalid WebAuthn RP ID");
   if (rpID !== parsed.hostname && !parsed.hostname.endsWith(`.${rpID}`)) throw new Error("WebAuthn RP ID must be the origin hostname or its parent domain");
   return { origin, rpID, rpName: env.AUTH_WEBAUTHN_RP_NAME };
+}
+
+/** Allows authenticated users to register passkeys before enabling MFA login. */
+export function isWebAuthnConfigurationReady(request?: Request) {
+  if (!isValidWebAuthnOriginConfig(env.AUTH_APP_ORIGIN, env.AUTH_WEBAUTHN_RP_ID, env.NODE_ENV === "production")) return false;
+  try {
+    const configured = webAuthnConfiguration(request);
+    return configured.origin === new URL(env.AUTH_APP_ORIGIN!).origin;
+  } catch {
+    return false;
+  }
 }
 
 export function isMfaConfigurationReady() {

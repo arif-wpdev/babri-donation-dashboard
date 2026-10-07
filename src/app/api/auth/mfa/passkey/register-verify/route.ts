@@ -2,14 +2,14 @@ import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/types";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import { ensureSameOrigin, hashAuthValue, isMfaConfigurationReady, issueTrustedDevice, isPasskeyChallengeUsable, requestIp, webAuthnConfiguration, writeSecurityEvent } from "@/lib/auth-security";
+import { ensureSameOrigin, hashAuthValue, isWebAuthnConfigurationReady, issueTrustedDevice, isPasskeyChallengeUsable, requestIp, webAuthnConfiguration, writeSecurityEvent } from "@/lib/auth-security";
 
 const schema = (body: unknown): body is { response: RegistrationResponseJSON; deviceName?: string } => Boolean(body && typeof body === "object" && "response" in body && body.response && typeof body.response === "object" && "id" in body.response && typeof body.response.id === "string" && body.response.id.length <= 4096);
 
 export async function POST(request: Request) {
   try {
     ensureSameOrigin(request);
-    if (!isMfaConfigurationReady()) return Response.json({ error: "Passkey registration is unavailable" }, { status: 503 });
+    if (!isWebAuthnConfigurationReady(request)) return Response.json({ error: "Passkey registration is unavailable. Check the configured HTTPS origin and WebAuthn RP ID." }, { status: 503 });
     const user = await requireAuth();
     const body: unknown = await request.json().catch(() => null);
     if (!schema(body) || !body.response.id) return Response.json({ error: "Invalid passkey registration response" }, { status: 400 });
