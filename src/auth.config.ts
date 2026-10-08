@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { canAuthenticateAccount } from "@/lib/auth-session-policy";
 
 export const authConfig = {
   providers: [],
@@ -25,10 +26,10 @@ export const authConfig = {
         token.passwordChangedAt = account?.passwordChangedAt.getTime() ?? 0;
       } else if (token.id) {
         const [account, authSession] = await Promise.all([
-          prisma.user.findUnique({ where: { id: token.id as string }, select: { passwordChangedAt: true } }),
+          prisma.user.findUnique({ where: { id: token.id as string }, select: { passwordChangedAt: true, disabledAt: true, role: true, org: { select: { deletedAt: true } } } }),
           token.authSessionId ? prisma.authSession.findUnique({ where: { id: token.authSessionId as string }, select: { userId: true, expiresAt: true, revokedAt: true } }) : Promise.resolve(null),
         ]);
-        if (!account || account.passwordChangedAt.getTime() !== token.passwordChangedAt) return null;
+        if (!account || !canAuthenticateAccount({ role: account.role, disabledAt: account.disabledAt, organizationActive: !account.org?.deletedAt }) || account.role !== token.role || account.passwordChangedAt.getTime() !== token.passwordChangedAt) return null;
         if (token.authSessionId && (!authSession || authSession.userId !== token.id || authSession.revokedAt || authSession.expiresAt <= new Date())) return null;
         if (!token.authSessionId && process.env.AUTH_MFA_ENABLED === "true") return null;
       }

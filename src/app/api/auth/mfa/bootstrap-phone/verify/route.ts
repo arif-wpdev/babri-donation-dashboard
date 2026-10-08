@@ -21,12 +21,12 @@ export async function POST(request: Request) {
     ]);
     if (!rate.allowed) return Response.json({ error: "Verification is temporarily unavailable. Try again later." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
 
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true, orgId: true, org: { select: { deletedAt: true } }, phoneVerifiedAt: true, passwordHash: true } });
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true, orgId: true, disabledAt: true, org: { select: { deletedAt: true } }, phoneVerifiedAt: true, passwordHash: true } });
     const validPassword = user?.passwordHash
       ? await bcrypt.compare(parsed.data.password, user.passwordHash)
       : false;
     const organizationActive = user?.role === "SUPER_ADMIN" || (Boolean(user?.orgId) && !user?.org?.deletedAt);
-    if (!user || !canBootstrapPasswordAdminPhone({ role: user.role, passwordHash: user.passwordHash, phoneVerifiedAt: user.phoneVerifiedAt, organizationActive: Boolean(organizationActive) }) || !validPassword) return Response.json(genericError, { status: 400 });
+    if (!user || user.disabledAt || !canBootstrapPasswordAdminPhone({ role: user.role, passwordHash: user.passwordHash, phoneVerifiedAt: user.phoneVerifiedAt, organizationActive: Boolean(organizationActive) }) || !validPassword) return Response.json(genericError, { status: 400 });
 
     const identifierHash = hashAuthValue(user.id, "admin-phone-bootstrap");
     const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "PHONE_VERIFICATION" } } });

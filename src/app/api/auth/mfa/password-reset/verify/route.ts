@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ensureSameOrigin, enforceRateLimits, hashAuthValue, isMfaConfigurationReady, isOtpChallengeUsable, nextOtpFailure, normalizeIdentifier, OTP_LOCK_DURATION_MS, OTP_MAX_FAILED_ATTEMPTS, requestIp, verifyOtpHash, writeSecurityEvent } from "@/lib/auth-security";
+import { canResetAccountPassword } from "@/lib/auth-session-policy";
 
 const schema = z.object({ identifier: z.string().min(8).max(32), otp: z.string().regex(/^\d{6}$/), newPassword: z.string().min(12).max(256).regex(/[A-Z]/).regex(/[a-z]/).regex(/[0-9]/) });
 
@@ -21,13 +22,13 @@ export async function POST(request: Request) {
     if (!rate.allowed) return Response.json({ error: "Password recovery is temporarily unavailable." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
     const user = await prisma.user.findFirst({
       where: { phone: identifier, phoneVerifiedAt: { not: null }, OR: [{ orgId: null }, { org: { deletedAt: null } }] },
-      select: { id: true, role: true, passwordHash: true },
+      select: { id: true, role: true, passwordHash: true, disabledAt: true },
     });
-    if (!user || (user.role !== "SUPER_ADMIN" && user.passwordHash === null)) return Response.json({ error: "Invalid or expired reset code." }, { status: 400 });
+    if (!user || user.disabledAt || !canResetAccountPassword({ role: user.role, passwordHash: user.passwordHash })) return Response.json({ error: "Invalid or expired reset code." }, { status: 400 });
     const identifierHash = hashAuthValue(user.id, "password-reset");
     const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "PASSWORD_RESET" } } });
     const now = new Date();
-      if (!challenge || !isOtpChallengeUsable(challenge, now, OTP_MAX_FAILED_ATTEMPTS)) return Response.json({ error: "Invalid or expired reset code." }, { status: 400 });
+    if (!challenge || !isOtpChallengeUsable(challenge, now, OTP_MAX_FAILED_ATTEMPTS)) return Response.json({ error: "Invalid or expired reset code." }, { status: 400 });
     const activeOtpHash = challenge.otpHash;
     if (!activeOtpHash) return Response.json({ error: "Invalid or expired reset code." }, { status: 400 });
     if (!verifyOtpHash(activeOtpHash, parsed.data.otp)) {
@@ -48,6 +49,9 @@ export async function POST(request: Request) {
       if (claimed.count !== 1) return false;
       await tx.user.update({ where: { id: user.id }, data: { passwordHash, passwordChangedAt: now } });
       await tx.authSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: now } });
+      await tx.loginPreAuth.updateMany({ where: { userId: user.id, consumedAt: null }, data: { consumedAt: now } });
+      await tx.loginTicket.updateMany({ where: { userId: user.id, consumedAt: null }, data: { consumedAt: now } });
+      await tx.authChallenge.updateMany({ where: { userId: user.id, consumedAt: null, type: { in: ["OTP", "PASSKEY_AUTHENTICATION"] } }, data: { consumedAt: now, otpHash: null, challenge: null } });
       return true;
     }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 10_000 });
     if (!completed) return Response.json({ error: "Reset code was already used or expired." }, { status: 409 });

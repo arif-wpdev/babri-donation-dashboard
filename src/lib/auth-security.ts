@@ -5,7 +5,7 @@ import { sendGreenwebOtp } from "@/lib/greenweb-sms";
 import type { AuthEventType, Prisma, Role } from "@prisma/client";
 import { cookies } from "next/headers";
 import type { AuthenticatorDevice } from "@simplewebauthn/types";
-import { canEmployeeFallbackToOtp, isActiveSessionRecord, isMobileAppSessionLocked, isValidWebAuthnOriginConfig } from "@/lib/auth-session-policy";
+import { canAuthenticateAccount, canEmployeeFallbackToOtp, isActiveSessionRecord, isMobileAppSessionLocked, isValidWebAuthnOriginConfig } from "@/lib/auth-session-policy";
 
 const otpHashSecret = () => env.AUTH_OTP_HASH_KEY || env.AUTH_SECRET;
 const rateHashSecret = () => env.AUTH_RATE_LIMIT_HMAC_KEY || env.AUTH_SECRET;
@@ -354,12 +354,13 @@ export async function rotateEmployeePasskeyPreAuthToOtp(input: { userId: string;
   const created = await prisma.$transaction(async (tx) => {
     const current = await tx.loginPreAuth.findUnique({
       where: { id: input.preAuthId },
-      include: { user: { select: { role: true, phoneVerifiedAt: true, orgId: true, org: { select: { deletedAt: true } } } } },
+      include: { user: { select: { role: true, passwordHash: true, phoneVerifiedAt: true, disabledAt: true, orgId: true, org: { select: { deletedAt: true } } } } },
     });
-    if (!current || current.userId !== input.userId || current.tokenHash !== input.preAuthTokenHash || current.consumedAt || current.expiresAt <= now || !canEmployeeFallbackToOtp({
+    if (!current || current.userId !== input.userId || current.user.disabledAt || current.tokenHash !== input.preAuthTokenHash || current.consumedAt || current.expiresAt <= now || !canEmployeeFallbackToOtp({
       role: current.user.role,
+      passwordlessAccount: current.user.passwordHash === null,
       phoneVerifiedAt: current.user.phoneVerifiedAt,
-      organizationActive: Boolean(current.user.orgId) && !current.user.org?.deletedAt,
+      organizationActive: current.user.role === "SUPER_ADMIN" || (Boolean(current.user.orgId) && !current.user.org?.deletedAt),
       preAuthPasskeyOnly: current.passkeyOnly,
       deliveryChannel: current.deliveryChannel,
     })) throw new Error("Passkey fallback is no longer available");
@@ -399,9 +400,9 @@ export async function getPreAuthUser() {
   if (!cookieValue) return null;
   const preAuth = await prisma.loginPreAuth.findUnique({
     where: { tokenHash: createHash("sha256").update(cookieValue).digest("hex") },
-    include: { user: true },
+    include: { user: { include: { org: { select: { deletedAt: true } } } } },
   });
-  if (!preAuth || preAuth.expiresAt <= new Date() || preAuth.consumedAt) return null;
+  if (!preAuth || preAuth.expiresAt <= new Date() || preAuth.consumedAt || preAuth.user.disabledAt || preAuth.user.org?.deletedAt) return null;
   return { preAuth, user: preAuth.user };
 }
 
@@ -497,17 +498,17 @@ export async function requireStrongSession(user: StrongSessionUser) {
   if (!user) throw new Error("Unauthorized");
   if (!user.authSessionId) {
     if (env.AUTH_MFA_ENABLED === "true") throw new Error("Unauthorized");
-    const legacyUser = await prisma.user.findUnique({ where: { id: user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, org: { select: { slug: true, deletedAt: true } } } });
-    if (!legacyUser || legacyUser.org?.deletedAt) throw new Error("Unauthorized");
+    const legacyUser = await prisma.user.findUnique({ where: { id: user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } } });
+    if (!legacyUser || !canAuthenticateAccount({ role: legacyUser.role, disabledAt: legacyUser.disabledAt, organizationActive: !legacyUser.org?.deletedAt })) throw new Error("Unauthorized");
     return { ...user, name: legacyUser.name, email: legacyUser.email, role: legacyUser.role, orgId: legacyUser.orgId, orgSlug: legacyUser.org?.slug ?? null };
   }
   if (env.AUTH_MFA_ENABLED === "true" && !user.mfaVerifiedAt) throw new Error("Unauthorized");
   const [record, account] = await Promise.all([
     prisma.authSession.findUnique({ where: { id: user.authSessionId }, select: { userId: true, expiresAt: true, revokedAt: true, lastUsedAt: true, mobileLockEnabled: true } }),
-    prisma.user.findUnique({ where: { id: user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, org: { select: { slug: true, deletedAt: true } } } }),
+    prisma.user.findUnique({ where: { id: user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } } }),
   ]);
   if (!record || !isActiveSessionRecord(record, user.id, new Date())) throw new Error("Unauthorized");
-  if (!account || account.org?.deletedAt) throw new Error("Unauthorized");
+  if (!account || !canAuthenticateAccount({ role: account.role, disabledAt: account.disabledAt, organizationActive: !account.org?.deletedAt })) throw new Error("Unauthorized");
   if (account.role !== user.role || account.orgId !== user.orgId) throw new Error("Unauthorized");
   const now = new Date();
   if (isMobileAppSessionLocked({ role: account.role, lockEnabled: record.mobileLockEnabled, lastUsedAt: record.lastUsedAt, now })) throw new MobileAppSessionLockedError();

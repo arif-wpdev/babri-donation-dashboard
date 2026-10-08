@@ -4,11 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { env } from "@/env";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { clearPreAuth, ensureSameOrigin, enforceRateLimits, getTrustedDeviceCredentialForLogin, hashAuthValue, isMfaConfigurationReady, isOtpDeliveryReady, normalizeIdentifier, prefersMobileAuthFlow, requestIp, writeSecurityEvent, issuePreAuth, webAuthnConfiguration } from "@/lib/auth-security";
-import { canLoginWithPassword, canMigrateOrgAdminToPasswordless, chooseEmployeeLoginFactor, isPhoneOnlyPasswordlessRole } from "@/lib/auth-session-policy";
+import { canAuthenticateAccount, canLoginWithPassword, canMigrateOrgAdminToPasswordless, chooseLoginFactor, isPhoneOnlyPasswordlessRole } from "@/lib/auth-session-policy";
 
 const bodySchema = z.object({
   identifier: z.string().min(8).max(24),
   password: z.string().max(256).optional(),
+  factor: z.enum(["biometric", "otp", "recovery"]).nullable().optional(),
 }).strict();
 
 export async function POST(request: Request) {
@@ -28,12 +29,24 @@ export async function POST(request: Request) {
     if (!rate.allowed) return Response.json({ error: "Sign-in is temporarily unavailable. Try again later." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
 
     const user = await prisma.user.findFirst({
-      where: { phone: identifier, phoneVerifiedAt: { not: null }, OR: [{ orgId: null }, { org: { deletedAt: null } }] },
-      select: { id: true, role: true, phone: true, phoneVerifiedAt: true, passwordHash: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } },
+      where: { phone: identifier, OR: [{ orgId: null }, { org: { deletedAt: null } }] },
+      select: { id: true, role: true, phone: true, phoneVerifiedAt: true, passwordHash: true, disabledAt: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } },
     });
+    if (user && !canAuthenticateAccount({ role: user.role, disabledAt: user.disabledAt, organizationActive: !user.org?.deletedAt })) {
+      await writeSecurityEvent({ userId: user.id, eventType: "PASSWORD_FAILURE", ip, userAgent: request.headers.get("user-agent"), details: { reason: "account_disabled" } });
+      return Response.json({ error: "Invalid sign-in details" }, { status: 401 });
+    }
     const isPhoneOnlyAccount = Boolean(user && isPhoneOnlyPasswordlessRole(user.role) && user.passwordHash === null);
     const requiresPassword = Boolean(user && (!isPhoneOnlyPasswordlessRole(user.role) || canLoginWithPassword({ role: user.role, passwordHash: user.passwordHash, phoneVerifiedAt: user.phoneVerifiedAt })));
     const password = parsed.data.password;
+    if (user && requiresPassword && !password) {
+      const dummyHash = env.AUTH_DUMMY_PASSWORD_HASH && /^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$/.test(env.AUTH_DUMMY_PASSWORD_HASH)
+        ? env.AUTH_DUMMY_PASSWORD_HASH
+        : undefined;
+      if (dummyHash) await bcrypt.compare(identifier, dummyHash);
+      await writeSecurityEvent({ userId: user.id, eventType: "PASSWORD_FAILURE", ip, userAgent: request.headers.get("user-agent") });
+      return Response.json({ error: "Invalid sign-in details" }, { status: 401 });
+    }
     const dummyHash = env.AUTH_DUMMY_PASSWORD_HASH && /^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$/.test(env.AUTH_DUMMY_PASSWORD_HASH)
       ? env.AUTH_DUMMY_PASSWORD_HASH
       : undefined;
@@ -44,18 +57,43 @@ export async function POST(request: Request) {
       await writeSecurityEvent({ userId: user?.id, eventType: "PASSWORD_FAILURE", ip, userAgent: request.headers.get("user-agent") });
       return Response.json({ error: "Invalid sign-in details" }, { status: 401 });
     }
-    if (!isMfaConfigurationReady()) return Response.json({ error: "Sign-in is temporarily unavailable. Contact an administrator." }, { status: 503 });
-
     const organizationActive = user.role === "SUPER_ADMIN" || (Boolean(user.orgId) && !user.org?.deletedAt);
     if (!organizationActive || (isPhoneOnlyAccount && (!user.phone || !user.phoneVerifiedAt))) {
       return Response.json({ error: "Invalid sign-in details" }, { status: 401 });
     }
+    if ((user.role === "SUPER_ADMIN" || user.role === "ORG_ADMIN") && user.passwordHash && !user.phoneVerifiedAt) {
+      return Response.json({ error: "Verify your administrator phone at /setup/admin before signing in." }, { status: 409 });
+    }
+    if (user.role === "ORG_ADMIN" && user.passwordHash) {
+      if (parsed.data.factor === "recovery") {
+        await clearPreAuth();
+        await issuePreAuth(user.id, "sms", false);
+        return Response.json({ success: true, next: "recovery", role: user.role, employee: false });
+      }
+      await clearPreAuth();
+      return Response.json({ success: true, next: "legacy-password", role: user.role, passwordVerified: true });
+    }
+
+    if (!isMfaConfigurationReady()) return Response.json({ error: "Sign-in is temporarily unavailable. Contact an administrator." }, { status: 503 });
+
     const destination = user.phone && user.phoneVerifiedAt ? { channel: "sms" as const, destination: user.phone } : null;
-    if (!destination || !isOtpDeliveryReady(destination.channel)) return Response.json({ error: "Phone verification is temporarily unavailable. Contact an administrator." }, { status: 503 });
+    if ((parsed.data.factor == null || parsed.data.factor === "recovery") && !isOtpDeliveryReady("sms")) return Response.json({ error: "Sign-in is temporarily unavailable. Contact an administrator." }, { status: 503 });
+    if (!destination || (parsed.data.factor === "otp" && !isOtpDeliveryReady(destination.channel))) return Response.json({ error: "Phone verification is temporarily unavailable. Contact an administrator." }, { status: 503 });
 
     const trustedDevice = await getTrustedDeviceCredentialForLogin(user.id);
-    const factor = chooseEmployeeLoginFactor({ role: user.role, phoneVerifiedAt: user.phoneVerifiedAt, organizationActive, hasTrustedActivePasskey: Boolean(trustedDevice), mobile: prefersMobileAuthFlow(request.headers) });
-    const usePasskey = factor === "passkey" || (factor === "admin" && Boolean(trustedDevice) && prefersMobileAuthFlow(request.headers));
+    if (parsed.data.factor == null) {
+      await clearPreAuth();
+      return Response.json({ success: true, next: "choose-factor", role: user.role, employee: isPhoneOnlyAccount });
+    }
+    if (parsed.data.factor === "recovery") {
+      await clearPreAuth();
+      await issuePreAuth(user.id, destination.channel, false);
+      return Response.json({ success: true, next: "recovery", role: user.role, employee: isPhoneOnlyAccount });
+    }
+    const requestedFactor = parsed.data.factor;
+    const selectedFactor = chooseLoginFactor({ factor: requestedFactor, role: user.role, phoneVerifiedAt: user.phoneVerifiedAt, organizationActive, hasTrustedActivePasskey: Boolean(trustedDevice), mobile: prefersMobileAuthFlow(request.headers) });
+    if (!selectedFactor) return Response.json({ error: requestedFactor === "biometric" ? "Biometric sign-in is only available on this phone after a passkey is registered. Choose OTP instead." : "Sign-in is unavailable for this account." }, { status: 409 });
+    const usePasskey = selectedFactor === "passkey";
     const identifierHash = hashAuthValue(user.id, "otp-identity");
     const otpLock = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "OTP" } }, select: { lockedUntil: true } });
     if (otpLock?.lockedUntil && otpLock.lockedUntil > new Date() && !usePasskey) {

@@ -1,14 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
-import { clearTrustedDevice, ensureSameOrigin, requestIp, trustedDeviceTokenHash, writeSecurityEvent } from "@/lib/auth-security";
+import { clearTrustedDevice, ensureSameOrigin, isMfaConfigurationReady, requestIp, trustedDeviceTokenHash, writeSecurityEvent } from "@/lib/auth-security";
 
 export async function GET() {
   try {
     const user = await requireAuth();
     const devices = await prisma.webAuthnCredential.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, select: { id: true, credentialDeviceId: true, deviceName: true, deviceType: true, backedUp: true, createdAt: true, lastUsedAt: true, revokedAt: true, trustedDevices: { select: { id: true, createdAt: true, lastUsedAt: true, revokedAt: true } } } });
     const sessions = await prisma.authSession.findMany({ where: { userId: user.id, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { lastUsedAt: "desc" }, select: { id: true, createdAt: true, lastUsedAt: true, expiresAt: true } });
-    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { phone: true, phoneVerifiedAt: true, passwordHash: true } });
-    return Response.json({ devices: devices.map(({ credentialDeviceId, trustedDevices, ...device }) => ({ ...device, credentialId: credentialDeviceId, trustedDevices })), sessions: sessions.map(({ id, createdAt, lastUsedAt, expiresAt }) => ({ id, createdAt, lastUsedAt, expiresAt, isCurrent: id === user.authSessionId })), phone: account?.phone ?? "", phoneVerified: Boolean(account?.phoneVerifiedAt), passwordless: account?.passwordHash === null });
+    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, phone: true, phoneVerifiedAt: true, passwordHash: true } });
+    return Response.json({ devices: devices.map(({ credentialDeviceId, trustedDevices, ...device }) => ({ ...device, credentialId: credentialDeviceId, trustedDevices })), sessions: sessions.map(({ id, createdAt, lastUsedAt, expiresAt }) => ({ id, createdAt, lastUsedAt, expiresAt, isCurrent: id === user.authSessionId })), phone: account?.phone ?? "", phoneVerified: Boolean(account?.phoneVerifiedAt), passwordless: account?.passwordHash === null, role: account?.role ?? user.role, authenticationReady: isMfaConfigurationReady() });
   } catch (error) {
     if (error instanceof ApiError) return Response.json({ error: error.message }, { status: error.statusCode });
     return Response.json({ error: "Could not load security settings" }, { status: 500 });

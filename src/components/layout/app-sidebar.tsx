@@ -7,9 +7,8 @@ import {
   Users,
   Settings,
   HelpCircle,
-  FileText,
-  CreditCard,
   Target,
+  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -17,7 +16,6 @@ import { usePathname } from "next/navigation";
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -58,6 +56,11 @@ const navMain = [
     title: "Tools",
     items: [
       {
+        title: "Admin",
+        url: "/admin",
+        icon: ShieldCheck,
+      },
+      {
         title: "Team",
         url: "/dashboard/team",
         icon: Users,
@@ -81,10 +84,14 @@ export function AppSidebar({ userRole, ...props }: React.ComponentProps<typeof S
 
   // Filter navigation items based on role
   const filteredNavMain = navMain.map(group => {
-    if (userRole === "ORG_USER" && group.title === "Tools") {
+    if (group.title === "Tools") {
       return {
         ...group,
-        items: group.items.filter(item => item.title !== "Settings" && item.title !== "Team")
+        items: group.items.filter((item) => {
+          if (item.title === "Help") return true;
+          if (userRole === "ORG_USER") return false;
+          return item.title !== "Team";
+        }),
       };
     }
     return group;
@@ -114,7 +121,7 @@ export function AppSidebar({ userRole, ...props }: React.ComponentProps<typeof S
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
-                  const isActive = pathname === item.url;
+                  const isActive = pathname === item.url || pathname.startsWith(`${item.url}/`);
                   return (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton

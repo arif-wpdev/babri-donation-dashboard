@@ -125,6 +125,138 @@ export function isPhoneOnlyPasswordlessRole(role: string) {
   return role === "ORG_USER" || role === "ORG_ADMIN";
 }
 
+export function canAccessAdminArea(role: string) {
+  return role === "SUPER_ADMIN" || role === "ORG_ADMIN";
+}
+
+export function canManageAdminOrganization(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetOrgId: string;
+  targetOrganizationActive: boolean;
+}) {
+  if (!input.targetOrganizationActive) return false;
+  if (input.actorRole === "SUPER_ADMIN") return true;
+  return input.actorRole === "ORG_ADMIN" && Boolean(input.actorOrgId) && input.actorOrgId === input.targetOrgId;
+}
+
+export function canManageOrganizationData(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetOrgId: string;
+  targetOrganizationActive: boolean;
+}) {
+  return (input.actorRole === "SUPER_ADMIN" || input.actorRole === "ORG_ADMIN") && canManageAdminOrganization(input);
+}
+
+export function canProvisionAdminAccount(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetRole: string;
+  targetOrgId: string;
+  targetOrganizationActive: boolean;
+  authenticationReady?: boolean;
+}) {
+  if (!input.targetOrganizationActive) return false;
+  if (input.actorRole === "SUPER_ADMIN") {
+    return input.targetRole === "ORG_USER" || (input.targetRole === "ORG_ADMIN" && input.authenticationReady === true);
+  }
+  return input.actorRole === "ORG_ADMIN" &&
+    input.targetRole === "ORG_USER" &&
+    Boolean(input.actorOrgId) &&
+    input.actorOrgId === input.targetOrgId;
+}
+
+export function canViewAdminAccounts(actorRole: string, targetRole: string) {
+  if (actorRole === "SUPER_ADMIN") return targetRole === "ORG_ADMIN" || targetRole === "ORG_USER";
+  return actorRole === "ORG_ADMIN" && targetRole === "ORG_USER";
+}
+
+export function getAdminAccountStatusDetails(input: {
+  role: string;
+  passwordHash: string | null;
+  phoneVerifiedAt: Date | null;
+  hasActivePasskey: boolean;
+  authenticationReady: boolean;
+  disabledAt?: Date | null;
+}) {
+  const status = getAdminAccountStatus(input);
+  return {
+    status,
+    migrationBlockers: input.role === "ORG_ADMIN" && input.passwordHash !== null && !input.disabledAt
+      ? [
+          ...(!input.phoneVerifiedAt ? ["verified_phone"] : []),
+          ...(!input.hasActivePasskey ? ["active_passkey"] : []),
+          ...(!input.authenticationReady ? ["authentication_configuration"] : []),
+        ]
+      : [],
+  } as const;
+}
+
+export function canAdministerEmployeeAccount(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetRole: string;
+  targetOrgId: string | null;
+  targetOrganizationActive: boolean;
+}) {
+  return input.targetRole === "ORG_USER" && Boolean(input.targetOrgId) && canManageAdminOrganization({
+    actorRole: input.actorRole,
+    actorOrgId: input.actorOrgId,
+    targetOrgId: input.targetOrgId ?? "",
+    targetOrganizationActive: input.targetOrganizationActive,
+  });
+}
+
+export function canAuthenticateAccount(input: { role: string; disabledAt: Date | null; organizationActive: boolean }) {
+  return !input.disabledAt && (input.role === "SUPER_ADMIN" || input.organizationActive);
+}
+
+export function canReactivateEmployee(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetRole: string;
+  targetOrgId: string | null;
+  targetOrganizationActive: boolean;
+  currentlyDisabled: boolean;
+}) {
+  return input.currentlyDisabled && canAdministerEmployeeAccount(input);
+}
+
+export function canRetireLegacyAuthentication(input: { outstandingLegacyAccounts: number; ownerConfirmedExemptions: number; recoveryExerciseComplete: boolean }) {
+  return input.outstandingLegacyAccounts === 0 && input.ownerConfirmedExemptions >= 0 && input.recoveryExerciseComplete;
+}
+
+export function canProvisionAdminRole(actorRole: string, targetRole: string) {
+  if (actorRole === "SUPER_ADMIN") return targetRole === "ORG_ADMIN";
+  return actorRole === "ORG_ADMIN" && targetRole === "ORG_USER";
+}
+
+export function getAdminAccountStatus(input: {
+  role: string;
+  passwordHash: string | null;
+  phoneVerifiedAt: Date | null;
+  hasActivePasskey: boolean;
+  authenticationReady: boolean;
+  disabledAt?: Date | null;
+}) {
+  if (input.disabledAt) return "disabled" as const;
+  if (input.role === "SUPER_ADMIN") return input.passwordHash ? "legacy_password" as const : "passwordless" as const;
+  if (input.role === "ORG_ADMIN" && input.passwordHash) {
+    if (!input.phoneVerifiedAt) return "legacy_phone_unverified" as const;
+    if (input.hasActivePasskey && input.authenticationReady) return "ready_to_migrate" as const;
+    if (!input.hasActivePasskey) return "legacy_passkey_missing" as const;
+    return "legacy_password" as const;
+  }
+  if (!input.phoneVerifiedAt) return "phone_unverified" as const;
+  if (input.passwordHash) {
+    return "legacy_password" as const;
+  }
+  if ((input.role === "ORG_USER" || input.role === "ORG_ADMIN") && !input.hasActivePasskey) return "passkey_missing" as const;
+  return "passwordless" as const;
+}
+
+
 export function canCreatePhoneOnlyOrgAdmin(input: {
   actorRole: string;
   organizationActive: boolean;
@@ -172,14 +304,30 @@ export function chooseEmployeeLoginFactor(input: {
   return input.mobile && input.hasTrustedActivePasskey ? "passkey" : "otp";
 }
 
+export function chooseLoginFactor(input: {
+  factor: "biometric" | "otp";
+  role: string;
+  phoneVerifiedAt: Date | null;
+  organizationActive: boolean;
+  hasTrustedActivePasskey: boolean;
+  mobile: boolean;
+}) {
+  if (input.role !== "SUPER_ADMIN" && input.role !== "ORG_ADMIN" && input.role !== "ORG_USER") return null;
+  if (!input.phoneVerifiedAt || !input.organizationActive) return null;
+  if (input.role === "SUPER_ADMIN") return input.factor === "otp" ? "otp" : input.mobile && input.hasTrustedActivePasskey ? "passkey" : null;
+  if (input.factor === "otp") return "otp";
+  return input.mobile && input.hasTrustedActivePasskey ? "passkey" : null;
+}
+
 export function canEmployeeFallbackToOtp(input: {
   role: string;
+  passwordlessAccount?: boolean;
   phoneVerifiedAt: Date | null;
   organizationActive: boolean;
   preAuthPasskeyOnly: boolean;
   deliveryChannel: string | null;
 }) {
-  return (input.role === "ORG_USER" || input.role === "ORG_ADMIN") &&
+  return (input.role === "ORG_USER" || input.role === "SUPER_ADMIN" || (input.role === "ORG_ADMIN" && input.passwordlessAccount === true)) &&
     Boolean(input.phoneVerifiedAt) &&
     input.organizationActive &&
     input.preAuthPasskeyOnly &&
@@ -287,6 +435,22 @@ export function canGenerateAccountRecoveryCodes(input: {
   return Boolean(input.passwordHash);
 }
 
+export function canResetAccountPassword(input: { role: string; passwordHash: string | null }) {
+  return Boolean(input.passwordHash) && (input.role === "SUPER_ADMIN" || input.role === "ORG_ADMIN" || input.role === "ORG_USER");
+}
+
+export function getRecoveryReadiness(input: { role: string; passwordHash: string | null; phoneVerifiedAt: Date | null; hasActivePasskey: boolean }) {
+  const passwordResetEligible = canResetAccountPassword(input);
+  const recoveryCodesEligible = canGenerateAccountRecoveryCodes(input);
+  return {
+    passwordResetEligible,
+    recoveryCodesEligible,
+    recoveryCodesNeedPasskey: !input.hasActivePasskey,
+    recoveryCodesNeedPhone: !input.phoneVerifiedAt,
+  } as const;
+}
+
+
 export function isLegacyPhoneAccountMigrationEligible(input: {
   role: string;
   passwordHash: string | null;
@@ -312,7 +476,7 @@ export function canLoginWithPassword(input: {
   phoneVerifiedAt: Date | null;
 }) {
   if (input.role === "SUPER_ADMIN") return Boolean(input.passwordHash);
-  if (input.role === "ORG_ADMIN") return Boolean(input.passwordHash && input.phoneVerifiedAt);
+  if (input.role === "ORG_ADMIN") return Boolean(input.passwordHash);
   return false;
 }
 

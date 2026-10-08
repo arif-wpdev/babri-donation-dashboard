@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     ]);
     if (!rate.allowed) return Response.json(genericResponse);
 
-    const admin = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true, orgId: true, org: { select: { deletedAt: true } }, phone: true, phoneVerifiedAt: true, passwordHash: true } });
+    const admin = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, role: true, orgId: true, disabledAt: true, org: { select: { deletedAt: true } }, phone: true, phoneVerifiedAt: true, passwordHash: true } });
     const dummyPasswordHash = env.AUTH_DUMMY_PASSWORD_HASH && /^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$/.test(env.AUTH_DUMMY_PASSWORD_HASH)
       ? env.AUTH_DUMMY_PASSWORD_HASH
       : undefined;
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
         ? await bcrypt.compare(parsed.data.password, dummyPasswordHash)
         : false;
     const organizationActive = admin?.role === "SUPER_ADMIN" || (Boolean(admin?.orgId) && !admin?.org?.deletedAt);
-    if (!admin || !canBootstrapPasswordAdminPhone({ role: admin.role, passwordHash: admin.passwordHash, phoneVerifiedAt: admin.phoneVerifiedAt, organizationActive: Boolean(organizationActive) }) || !validPassword) {
+    if (!admin || admin.disabledAt || !canBootstrapPasswordAdminPhone({ role: admin.role, passwordHash: admin.passwordHash, phoneVerifiedAt: admin.phoneVerifiedAt, organizationActive: Boolean(organizationActive) }) || !validPassword) {
       await writeSecurityEvent({ userId: admin && (admin.role === "SUPER_ADMIN" || admin.role === "ORG_ADMIN") ? admin.id : null, eventType: "PASSWORD_FAILURE", ip, userAgent: request.headers.get("user-agent"), details: { flow: "admin_phone_bootstrap" } });
       return Response.json(genericResponse);
     }

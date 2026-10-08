@@ -1,11 +1,12 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOrgAccess, ApiError } from "@/lib/rbac";
+import { requireAuth, ApiError } from "@/lib/rbac";
+import { canManageOrganizationData } from "@/lib/auth-session-policy";
 
 /**
  * GET /api/orgs/[orgId]
  * Returns organization details.
- * Accessible by: SUPER_ADMIN (any org), ORG_ADMIN (own org only).
+ * Accessible by: SUPER_ADMIN (any active org), ORG_ADMIN (own active org only).
  */
 export async function GET(
   _request: NextRequest,
@@ -13,7 +14,11 @@ export async function GET(
 ) {
   try {
     const { orgId } = await params;
-    await requireOrgAccess(orgId);
+    const actor = await requireAuth();
+    const activeOrganization = await prisma.organization.findFirst({ where: { id: orgId, deletedAt: null }, select: { id: true } });
+    if (!canManageOrganizationData({ actorRole: actor.role, actorOrgId: actor.orgId, targetOrgId: orgId, targetOrganizationActive: Boolean(activeOrganization) })) {
+      throw new ApiError("Forbidden", 403);
+    }
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId, deletedAt: null },

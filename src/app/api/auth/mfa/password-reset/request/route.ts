@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { deliverOtp, ensureSameOrigin, enforceRateLimits, getOtpRequestBlock, hashAuthValue, normalizeIdentifier, randomOtp, requestIp, writeSecurityEvent } from "@/lib/auth-security";
-import { clearExpiredOtpLock } from "@/lib/auth-session-policy";
+import { canResetAccountPassword, clearExpiredOtpLock } from "@/lib/auth-session-policy";
 
 const schema = z.object({ identifier: z.string().min(8).max(32) });
 
@@ -20,9 +20,10 @@ export async function POST(request: Request) {
     if (!/^\+[1-9]\d{7,14}$/.test(identifier)) return Response.json({ success: true, message: "If the account is eligible, a reset code will be sent." });
     const user = await prisma.user.findFirst({
       where: { phone: identifier, phoneVerifiedAt: { not: null }, OR: [{ orgId: null }, { org: { deletedAt: null } }] },
-      select: { id: true, phone: true, role: true, passwordHash: true },
+      select: { id: true, phone: true, role: true, passwordHash: true, disabledAt: true },
     });
-    if (user && (user.role === "SUPER_ADMIN" || user.passwordHash !== null)) {
+    const passwordRecoveryEligible = Boolean(user && !user.disabledAt && canResetAccountPassword({ role: user.role, passwordHash: user.passwordHash }));
+    if (user && passwordRecoveryEligible) {
       const channel = "sms" as const;
       const destination = user.phone;
       if (destination) {

@@ -6,6 +6,7 @@ import { requireStrongSession } from "@/lib/auth-security";
 export default async function SecuritySettingsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  if (session.user.role === "ORG_ADMIN") redirect("/admin/security");
   try {
     await requireStrongSession(session.user);
   } catch {

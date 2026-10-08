@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, ApiError } from "@/lib/rbac";
 import { canMigrateOrgAdminToPasswordless } from "@/lib/auth-session-policy";
 import { ensureSameOrigin, isMfaConfigurationReady, requestIp, writeSecurityEvent } from "@/lib/auth-security";
+import { canContinueLegacyAdminLogin } from "@/lib/auth-session-policy";
 
 const schema = z.object({ password: z.string().min(1).max(256) }).strict();
 
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
       where: { id: user.id },
       select: { id: true, role: true, orgId: true, phone: true, phoneVerifiedAt: true, passwordHash: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } },
     });
-    if (!account || !account.passwordHash || !account.phone || !account.phoneVerifiedAt || !account.orgId || account.org?.deletedAt) return Response.json({ error: "Verify a phone number and register a passkey before migrating this account." }, { status: 409 });
+    if (!account || !account.passwordHash || !canContinueLegacyAdminLogin({ role: account.role, passwordHash: account.passwordHash, organizationActive: Boolean(account.orgId) && !account.org?.deletedAt }) || !account.phone || !account.phoneVerifiedAt || !account.orgId || account.org?.deletedAt) return Response.json({ error: "Verify a phone number and register a passkey before migrating this account." }, { status: 409 });
     if (!await bcrypt.compare(parsed.data.password, account.passwordHash)) return Response.json({ error: "Password confirmation failed." }, { status: 401 });
     if (!canMigrateOrgAdminToPasswordless({ role: account.role, passwordHash: account.passwordHash, phoneVerifiedAt: account.phoneVerifiedAt, organizationActive: Boolean(account.orgId) && !account.org?.deletedAt, hasActivePasskey: account.webAuthnCredentials.length > 0, suppliedPasswordValid: true, authenticationReady: isMfaConfigurationReady() })) return Response.json({ error: "This account is not ready to migrate." }, { status: 409 });
 
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
       await tx.authSession.updateMany({ where: { userId: account.id, revokedAt: null }, data: { revokedAt: now } });
       await tx.loginPreAuth.updateMany({ where: { userId: account.id, consumedAt: null }, data: { consumedAt: now } });
       await tx.loginTicket.updateMany({ where: { userId: account.id, consumedAt: null }, data: { consumedAt: now } });
+      await tx.authChallenge.updateMany({ where: { userId: account.id, consumedAt: null }, data: { consumedAt: now, otpHash: null, challenge: null } });
       return true;
     }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 10_000 });
     if (!migrated) return Response.json({ error: "Account changed during migration. Sign in and retry." }, { status: 409 });

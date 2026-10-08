@@ -16,7 +16,8 @@ export async function POST(request: Request) {
     const organizationActive = preAuth.user.role === "SUPER_ADMIN" || (Boolean(preAuth.user.orgId) && Boolean(organization) && !organization?.deletedAt);
     if (!organizationActive) return Response.json({ error: "Sign-in attempt expired. Restart sign-in." }, { status: 401 });
     if (preAuth.preAuth.passkeyOnly) {
-      if (!canEmployeeFallbackToOtp({ role: preAuth.user.role, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive, preAuthPasskeyOnly: true, deliveryChannel: preAuth.preAuth.deliveryChannel })) {
+      const account = await prisma.user.findUnique({ where: { id: preAuth.user.id }, select: { passwordHash: true } });
+      if (!canEmployeeFallbackToOtp({ role: preAuth.user.role, passwordlessAccount: account?.passwordHash === null, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive, preAuthPasskeyOnly: true, deliveryChannel: preAuth.preAuth.deliveryChannel })) {
         return Response.json({ error: "This trusted device requires its registered passkey." }, { status: 403 });
       }
     }
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
       const currentChallenge = await tx.authChallenge.findUnique({ where: { id: challenge.id } });
       if (!currentChallenge || currentChallenge.userId !== preAuth.user.id || currentChallenge.failedAttempts >= MAX_ATTEMPTS || currentChallenge.lockedUntil && currentChallenge.lockedUntil > now) return false;
       const currentPreAuth = await tx.loginPreAuth.findUnique({ where: { id: preAuth.preAuth.id }, select: { userId: true, tokenHash: true, deliveryChannel: true, passkeyOnly: true, consumedAt: true, expiresAt: true } });
-      const employeeFallback = canEmployeeFallbackToOtp({ role: preAuth.user.role, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive: Boolean(preAuth.user.orgId), preAuthPasskeyOnly: currentPreAuth?.passkeyOnly ?? false, deliveryChannel: preAuth.preAuth.deliveryChannel });
+      const employeeFallback = canEmployeeFallbackToOtp({ role: preAuth.user.role, passwordlessAccount: preAuth.user.passwordHash === null, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive: preAuth.user.role === "SUPER_ADMIN" || Boolean(preAuth.user.orgId), preAuthPasskeyOnly: currentPreAuth?.passkeyOnly ?? false, deliveryChannel: preAuth.preAuth.deliveryChannel });
       if (!currentPreAuth || currentPreAuth.userId !== preAuth.user.id || currentPreAuth.tokenHash !== preAuth.preAuth.tokenHash || currentPreAuth.deliveryChannel !== "sms" || currentPreAuth.consumedAt || currentPreAuth.expiresAt <= now || (currentPreAuth.passkeyOnly && !employeeFallback) || currentPreAuth.passkeyOnly !== preAuth.preAuth.passkeyOnly) return false;
       const claimed = await tx.authChallenge.updateMany({
         where: { id: challenge.id, userId: preAuth.user.id, otpHash: activeOtpHash, consumedAt: null, otpExpiresAt: { gt: now }, lockedUntil: null, failedAttempts: { lt: MAX_ATTEMPTS } },

@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { enforceRateLimits, hashAuthValue, isMfaConfigurationReady, normalizeIdentifier, requestIp, writeSecurityEvent } from "@/lib/auth-security";
 import { headers } from "next/headers";
 import { env } from "@/env";
-import { canCompletePasswordlessAdminEnrollment, canEmployeeCompleteEnrollmentLogin, canEmployeeReceiveSession, isEmployeeFirstPasskeyTicket, isLoginTicketCurrent, isPasswordlessAdminFirstPasskeyTicket, isPhoneOnlyPasswordlessRole } from "@/lib/auth-session-policy";
+import { canAuthenticateAccount, canCompletePasswordlessAdminEnrollment, canEmployeeCompleteEnrollmentLogin, canEmployeeReceiveSession, isEmployeeFirstPasskeyTicket, isLoginTicketCurrent, isPasswordlessAdminFirstPasskeyTicket, isPhoneOnlyPasswordlessRole } from "@/lib/auth-session-policy";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Module augmentation — extend the built-in session/user types
@@ -81,7 +81,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const ticket = await prisma.loginTicket.findUnique({ where: { tokenHash } });
           if (!ticket || ticket.expiresAt <= new Date() || ticket.consumedAt) return null;
           const user = await prisma.user.findUnique({ where: { id: ticket.userId }, include: { org: { select: { id: true, slug: true, deletedAt: true } } } });
-          if (!user || user.org?.deletedAt) return null;
+          if (!user || !canAuthenticateAccount({ role: user.role, disabledAt: user.disabledAt, organizationActive: !user.org?.deletedAt })) return null;
           const preAuth = ticket.preauthId ? await prisma.loginPreAuth.findUnique({ where: { id: ticket.preauthId } }) : null;
           if (!preAuth || preAuth.userId !== user.id || preAuth.expiresAt <= new Date() || !preAuth.consumedAt) return null;
           const isEmployeeEnrollment = preAuth.deliveryChannel === "employee-enrollment" && preAuth.passkeyOnly && user.role === "ORG_USER";
@@ -145,7 +145,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           include: { org: { select: { id: true, slug: true, deletedAt: true } } },
         });
 
-        if (user && isPhoneOnlyPasswordlessRole(user.role) && user.passwordHash === null) return null;
+        if ((user && !canAuthenticateAccount({ role: user.role, disabledAt: user.disabledAt, organizationActive: !user.org?.deletedAt })) || (user && isPhoneOnlyPasswordlessRole(user.role) && user.passwordHash === null)) return null;
 
         if (!user?.passwordHash || user.org?.deletedAt || !user.phoneVerifiedAt || normalizeIdentifier(user.phone ?? "") !== normalized) {
           const dummyPasswordHash = env.AUTH_DUMMY_PASSWORD_HASH && /^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$/.test(env.AUTH_DUMMY_PASSWORD_HASH)

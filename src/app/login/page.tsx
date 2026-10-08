@@ -1,7 +1,7 @@
 import { LoginForm } from "./login-form";
 import { env } from "@/env";
 
-export default async function LoginPage(props: { searchParams: Promise<{ callbackUrl: string | undefined }> }) {
+export default async function LoginPage(props: { searchParams: Promise<{ callbackUrl?: string; phone?: string }> }) {
   const searchParams = await props.searchParams;
   const requestedCallback = searchParams?.callbackUrl || "/dashboard";
   const callbackUrl = requestedCallback.startsWith("/") && !requestedCallback.startsWith("//") ? requestedCallback : "/dashboard";
@@ -27,7 +27,7 @@ export default async function LoginPage(props: { searchParams: Promise<{ callbac
           </p>
         </div>
 
-        <LoginForm callbackUrl={callbackUrl} mfaEnabled={env.AUTH_MFA_ENABLED === "true"} />
+        <LoginForm callbackUrl={callbackUrl} mfaEnabled={env.AUTH_MFA_ENABLED === "true"} invitedPhone={searchParams?.phone ?? ""} />
       </div>
     </div>
   );

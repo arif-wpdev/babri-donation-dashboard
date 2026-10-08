@@ -135,6 +135,7 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  disabledAt DateTime?
 
   // NextAuth adapter relations
   accounts Account[]

@@ -7,6 +7,7 @@ export async function POST(request: Request) {
     ensureSameOrigin(request);
     const preAuth = await getPreAuthUser();
     if (!preAuth) return Response.json({ error: "Sign-in attempt expired. Enter your password again." }, { status: 401 });
+    if (preAuth.user.disabledAt || preAuth.user.org?.deletedAt) return Response.json({ error: "Recovery is unavailable for this account." }, { status: 401 });
     if (preAuth.preAuth.passkeyOnly) return Response.json({ error: "This trusted device requires its registered passkey." }, { status: 403 });
     const rate = await enforceRateLimits([
       { key: `recovery-login-user:${preAuth.user.id}`, limit: 5, windowMs: 24 * 60 * 60_000, blockMs: 24 * 60 * 60_000 },

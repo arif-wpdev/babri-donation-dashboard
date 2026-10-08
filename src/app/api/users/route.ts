@@ -2,12 +2,12 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSuperAdmin, ApiError } from "@/lib/rbac";
 import { createOrgAdminSchema } from "@/lib/validations/schemas";
-import { canCreatePhoneOnlyOrgAdmin } from "@/lib/auth-session-policy";
-import { isMfaConfigurationReady, normalizeIdentifier } from "@/lib/auth-security";
+import { canCreatePhoneOnlyOrgAdmin, canProvisionAdminAccount } from "@/lib/auth-session-policy";
+import { ensureSameOrigin, isMfaConfigurationReady, normalizeIdentifier } from "@/lib/auth-security";
 
 /**
  * GET /api/users
- * Returns users. Super Admin sees all; not accessible to Org Admins (use /api/orgs/[orgId] for org-scoped user list).
+ * Returns user accounts. Super Admin only; account readiness is exposed through /api/admin/accounts.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -62,7 +62,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    await requireSuperAdmin();
+    ensureSameOrigin(request);
+    const actor = await requireSuperAdmin();
 
     const body = await request.json();
     const parsed = createOrgAdminSchema.safeParse(body);
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
       where: { phone },
       select: { id: true },
     });
-    if (!canCreatePhoneOnlyOrgAdmin({ actorRole: "SUPER_ADMIN", organizationActive: Boolean(org), phoneAlreadyRegistered: Boolean(existing), authReady })) {
+    if (!canProvisionAdminAccount({ actorRole: actor.role, actorOrgId: actor.orgId, targetRole: "ORG_ADMIN", targetOrgId: orgId, targetOrganizationActive: Boolean(org), authenticationReady: authReady }) || !canCreatePhoneOnlyOrgAdmin({ actorRole: actor.role, organizationActive: Boolean(org), phoneAlreadyRegistered: Boolean(existing), authReady })) {
       if (!authReady) return Response.json({ error: "Phone-based account setup is unavailable until authentication and SMS are configured." }, { status: 503 });
       if (!existing) return Response.json({ error: "Org Admin phone provisioning is unavailable." }, { status: 403 });
       return Response.json(
@@ -112,13 +113,14 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    const loginUrl = new URL("/login", request.nextUrl.origin);
+    const loginUrl = new URL("/setup", request.nextUrl.origin);
     loginUrl.searchParams.set("phone", phone);
     return Response.json({ data: user, onboardingUrl: loginUrl.toString() }, { status: 201 });
   } catch (error) {
     if (error instanceof ApiError) {
       return Response.json({ error: error.message }, { status: error.statusCode });
     }
+    if (error instanceof Error && error.message === "Invalid request origin") return Response.json({ error: "Invalid request" }, { status: 400 });
     console.error("[POST /api/users]", error);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }

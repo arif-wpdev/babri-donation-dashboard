@@ -33,10 +33,10 @@ export async function POST(request: Request) {
 
     const employee = await prisma.user.findUnique({
       where: { phone },
-      select: { id: true, role: true, phoneVerifiedAt: true, passwordHash: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } },
+      select: { id: true, role: true, disabledAt: true, phoneVerifiedAt: true, passwordHash: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } },
     });
     const isInvitedOrgAdmin = employee?.role === "ORG_ADMIN" && employee.passwordHash === null && employee.phoneVerifiedAt === null;
-    if (!employee || (employee.role !== "ORG_USER" && !isInvitedOrgAdmin) || !canRequestEmployeeEnrollmentOtp({ role: employee.role, phoneVerifiedAt: employee.phoneVerifiedAt, passwordHash: employee.passwordHash, hasActivePasskey: employee.webAuthnCredentials.length > 0, organizationActive: Boolean(employee.orgId) && !employee.org?.deletedAt })) {
+    if (!employee || employee.disabledAt || (employee.role !== "ORG_USER" && !isInvitedOrgAdmin) || !canRequestEmployeeEnrollmentOtp({ role: employee.role, phoneVerifiedAt: employee.phoneVerifiedAt, passwordHash: employee.passwordHash, hasActivePasskey: employee.webAuthnCredentials.length > 0, organizationActive: Boolean(employee.orgId) && !employee.org?.deletedAt })) {
       await writeSecurityEvent({ userId: employee && (employee.role === "ORG_USER" || isInvitedOrgAdmin) ? employee.id : null, eventType: "SUSPICIOUS_ACTIVITY", ip, userAgent: request.headers.get("user-agent"), details: { flow: "phone_only_account_bootstrap_rejected" } });
       return Response.json({ error: "If this employee account is eligible, a code will be sent." }, { status: 400 });
     }

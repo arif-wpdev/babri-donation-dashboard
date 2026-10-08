@@ -48,6 +48,7 @@ void Promise.all([
 		canContinueLegacyAdminLogin,
 		canMigrateOrgAdminToPasswordless,
 		canGenerateAccountRecoveryCodes,
+		canResetAccountPassword,
 		canOrgAdminAccessOrganization,
 		canLoginWithPassword,
 		canCompletePasswordlessAdminEnrollment,
@@ -57,6 +58,20 @@ void Promise.all([
 		canEmployeeCompleteFirstPasskey,
 		canRequestEmployeeEnrollmentOtp,
 		chooseEmployeeLoginFactor,
+		chooseLoginFactor,
+		canAccessAdminArea,
+		canManageAdminOrganization,
+		canManageOrganizationData,
+		canViewAdminAccounts,
+		canProvisionAdminRole,
+		canProvisionAdminAccount,
+		getAdminAccountStatus,
+		getAdminAccountStatusDetails,
+		getRecoveryReadiness,
+		canAdministerEmployeeAccount,
+		canAuthenticateAccount,
+		canReactivateEmployee,
+		canRetireLegacyAuthentication,
 		canEmployeeFallbackToOtp,
 		isRegisteredEmployeeOtpDestination,
 		isEmployeeEnrollmentHandoff,
@@ -179,13 +194,63 @@ void Promise.all([
 	assert.equal(chooseEmployeeLoginFactor({ role: "ORG_USER", phoneVerifiedAt: null, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), null, "unverified employee cannot start returning-device sign-in");
 	assert.equal(chooseEmployeeLoginFactor({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: false, hasTrustedActivePasskey: true, mobile: true }), null, "employee from a deleted organization cannot sign in");
 	assert.equal(chooseEmployeeLoginFactor({ role: "SUPER_ADMIN", phoneVerifiedAt: null, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), "admin", "Super Admin factor selection remains separate");
+	assert.equal(chooseLoginFactor({ factor: "otp", role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: false, mobile: false }), "otp", "explicit OTP selection works on desktop/new devices");
+	assert.equal(chooseLoginFactor({ factor: "biometric", role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), "passkey", "biometric selection requires trusted mobile passkey");
+	assert.equal(chooseLoginFactor({ factor: "biometric", role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: false, mobile: true }), null, "biometric selection is unavailable without a trusted passkey");
+	assert.equal(chooseLoginFactor({ factor: "biometric", role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: true, mobile: false }), null, "biometric selection is unavailable on desktop");
+	assert.equal(chooseLoginFactor({ factor: "otp", role: "ORG_USER", phoneVerifiedAt: null, organizationActive: true, hasTrustedActivePasskey: false, mobile: true }), null, "unverified employee cannot select a login factor");
+	assert.equal(chooseLoginFactor({ factor: "otp", role: "ORG_USER", phoneVerifiedAt: now, organizationActive: false, hasTrustedActivePasskey: false, mobile: true }), null, "inactive organization cannot select a login factor");
+	assert.equal(chooseLoginFactor({ factor: "otp", role: "SUPER_ADMIN", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), "otp", "Super Admin OTP remains available after password proof");
+	assert.equal(chooseLoginFactor({ factor: "biometric", role: "SUPER_ADMIN", phoneVerifiedAt: now, organizationActive: true, hasTrustedActivePasskey: true, mobile: true }), "passkey", "Super Admin may use a trusted passkey after the route verifies the required password");
+	assert.equal(canAccessAdminArea("SUPER_ADMIN"), true, "Super Admin can access Admin workspace");
+	assert.equal(canAccessAdminArea("ORG_ADMIN"), true, "Org Admin can access Admin workspace");
+	assert.equal(canAccessAdminArea("ORG_USER"), false, "Employee cannot access Admin workspace");
+	assert.equal(canManageAdminOrganization({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetOrgId: "org-2", targetOrganizationActive: true }), true, "Super Admin can administer any active organization");
+	assert.equal(canManageAdminOrganization({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetOrgId: "org-1", targetOrganizationActive: true }), true, "Org Admin can administer its own active organization");
+	assert.equal(canManageAdminOrganization({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetOrgId: "org-2", targetOrganizationActive: true }), false, "Org Admin cannot administer a different organization");
+	assert.equal(canManageAdminOrganization({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetOrgId: "org-1", targetOrganizationActive: false }), false, "Org Admin cannot administer an inactive organization");
+	assert.equal(canManageOrganizationData({ actorRole: "ORG_USER", actorOrgId: "org-1", targetOrgId: "org-1", targetOrganizationActive: true }), false, "Employees cannot access organization administration data");
+	assert.equal(canManageOrganizationData({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetOrgId: "org-2", targetOrganizationActive: true }), false, "Org Admin cannot access another organization's administration data");
+	assert.equal(canViewAdminAccounts("SUPER_ADMIN", "ORG_ADMIN"), true, "Super Admin can view Org Admin account status");
+	assert.equal(canViewAdminAccounts("ORG_ADMIN", "ORG_ADMIN"), false, "Org Admin cannot view other admin accounts");
+	assert.equal(canViewAdminAccounts("ORG_ADMIN", "ORG_USER"), true, "Org Admin can view employee status within its org-scoped query");
+	assert.equal(canViewAdminAccounts("ORG_USER", "ORG_USER"), false, "Employee cannot view account management records");
+	assert.equal(canProvisionAdminRole("SUPER_ADMIN", "ORG_ADMIN"), true, "Super Admin can provision Org Admin accounts");
+	assert.equal(canProvisionAdminRole("ORG_ADMIN", "ORG_ADMIN"), false, "Org Admin cannot provision another Org Admin");
+	assert.equal(canProvisionAdminRole("ORG_ADMIN", "ORG_USER"), true, "Org Admin can provision employees");
+	assert.equal(canProvisionAdminAccount({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "ORG_ADMIN", targetOrgId: "org-2", targetOrganizationActive: true, authenticationReady: true }), true, "Super Admin can provision Org Admin in active organization when auth is configured");
+	assert.equal(canProvisionAdminAccount({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "ORG_ADMIN", targetOrgId: "org-2", targetOrganizationActive: true, authenticationReady: false }), false, "Phone-only Org Admin provisioning is disabled until auth is configured");
+	assert.equal(canProvisionAdminAccount({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "ORG_USER", targetOrgId: "org-2", targetOrganizationActive: true }), true, "Super Admin can invite employees in a selected active organization");
+	assert.equal(canProvisionAdminAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-1", targetOrganizationActive: true }), true, "Org Admin can invite employee within its own active organization");
+	assert.equal(canProvisionAdminAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-2", targetOrganizationActive: true }), false, "Org Admin cannot invite an employee into a different organization");
+	assert.equal(getAdminAccountStatus({ role: "ORG_ADMIN", passwordHash: "hash", phoneVerifiedAt: null, hasActivePasskey: false, authenticationReady: true }), "legacy_phone_unverified", "Legacy password account with unverified phone has a distinct migration status");
+	assert.equal(getAdminAccountStatus({ role: "ORG_ADMIN", passwordHash: "hash", phoneVerifiedAt: now, hasActivePasskey: true, authenticationReady: true }), "ready_to_migrate", "Legacy Org Admin is migration-ready only with verified phone and passkey");
+	assert.equal(getAdminAccountStatus({ role: "ORG_ADMIN", passwordHash: "hash", phoneVerifiedAt: now, hasActivePasskey: false, authenticationReady: true }), "legacy_passkey_missing", "Legacy Org Admin passkey blocker is visible separately");
+	assert.equal(getAdminAccountStatus({ role: "ORG_USER", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: false, authenticationReady: true }), "passkey_missing", "Verified employee without passkey is reported safely");
+	assert.equal(getAdminAccountStatus({ role: "ORG_USER", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: true, authenticationReady: true }), "passwordless", "Verified employee with passkey is passwordless");
+	assert.equal(getAdminAccountStatus({ role: "ORG_USER", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: true, authenticationReady: true, disabledAt: now }), "disabled", "Disabled accounts are explicitly identified");
+	assert.deepEqual(getAdminAccountStatusDetails({ role: "ORG_ADMIN", passwordHash: "hash", phoneVerifiedAt: null, hasActivePasskey: false, authenticationReady: false }).migrationBlockers, ["verified_phone", "active_passkey", "authentication_configuration"], "Readiness exposes only safe migration prerequisite names");
+	assert.deepEqual(getRecoveryReadiness({ role: "ORG_USER", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: true }), { passwordResetEligible: false, recoveryCodesEligible: true, recoveryCodesNeedPasskey: false, recoveryCodesNeedPhone: false }, "Recovery status distinguishes unavailable password reset from usable recovery codes");
+	assert.equal(canAdministerEmployeeAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-1", targetOrganizationActive: true }), true, "Org Admin may manage an employee in its active org");
+	assert.equal(canAdministerEmployeeAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_ADMIN", targetOrgId: "org-1", targetOrganizationActive: true }), false, "Org Admin cannot disable another admin account");
+	assert.equal(canAdministerEmployeeAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-2", targetOrganizationActive: true }), false, "Org Admin cannot manage an employee from another org");
+	assert.equal(canAuthenticateAccount({ role: "ORG_USER", disabledAt: now, organizationActive: true }), false, "Disabled employee cannot authenticate");
+	assert.equal(canAuthenticateAccount({ role: "ORG_USER", disabledAt: null, organizationActive: false }), false, "Employee in inactive org cannot authenticate");
+	assert.equal(canAuthenticateAccount({ role: "ORG_USER", disabledAt: null, organizationActive: true }), true, "Active employee in active org can authenticate");
+	assert.equal(canReactivateEmployee({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-1", targetOrganizationActive: true, currentlyDisabled: true }), true, "Org Admin can reactivate a disabled employee in its org");
+	assert.equal(canReactivateEmployee({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-2", targetOrganizationActive: true, currentlyDisabled: true }), false, "Org Admin cannot reactivate another org's employee");
+	assert.equal(canRetireLegacyAuthentication({ outstandingLegacyAccounts: 0, ownerConfirmedExemptions: 0, recoveryExerciseComplete: true }), true, "Legacy retirement requires zero unhandled accounts and a completed recovery exercise");
+	assert.equal(canRetireLegacyAuthentication({ outstandingLegacyAccounts: 1, ownerConfirmedExemptions: 0, recoveryExerciseComplete: true }), false, "Legacy routes cannot retire while legacy accounts remain outstanding");
+	assert.equal(canRetireLegacyAuthentication({ outstandingLegacyAccounts: 0, ownerConfirmedExemptions: 1, recoveryExerciseComplete: false }), false, "Legacy routes cannot retire before recovery is exercised even when exemptions exist");
 	assert.equal(isRegisteredEmployeeOtpDestination({ role: "ORG_USER", phoneVerifiedAt: now, registeredPhone: "+8801521434555", destination: "+8801521434555" }), true, "employee OTP must target the verified registered phone");
 	assert.equal(isRegisteredEmployeeOtpDestination({ role: "ORG_USER", phoneVerifiedAt: now, registeredPhone: "+8801521434555", destination: "+8801812345678" }), false, "employee OTP cannot target a different supplied number");
 	assert.equal(isRegisteredEmployeeOtpDestination({ role: "ORG_USER", phoneVerifiedAt: null, registeredPhone: "+8801521434555", destination: "+8801521434555" }), false, "unverified number is not a valid returning-login destination");
 	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), true, "active employee can explicitly fall back from trusted passkey to registered-phone OTP");
 	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_USER", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: false, deliveryChannel: "sms" }), false, "OTP fallback cannot be invoked from an already-OTP login attempt");
-	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_ADMIN", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), true, "passwordless Org Admin can fall back from mobile passkey to their registered-phone OTP");
-	assert.equal(canEmployeeFallbackToOtp({ role: "SUPER_ADMIN", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), false, "Super Admin's separate authentication flow is not changed");
+	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_ADMIN", passwordlessAccount: true, phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), true, "passwordless Org Admin can fall back from mobile passkey to their registered-phone OTP");
+	assert.equal(canEmployeeFallbackToOtp({ role: "ORG_ADMIN", passwordlessAccount: false, phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), false, "legacy password-backed Org Admin does not use the phone-only passkey fallback route");
+	assert.equal(canEmployeeFallbackToOtp({ role: "SUPER_ADMIN", phoneVerifiedAt: now, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), true, "Super Admin with an OTP-capable passkey pre-auth can explicitly fall back to registered-phone SMS");
+	assert.equal(canEmployeeFallbackToOtp({ role: "SUPER_ADMIN", phoneVerifiedAt: null, organizationActive: true, preAuthPasskeyOnly: true, deliveryChannel: "sms" }), false, "unverified Super Admin phone cannot receive OTP fallback");
 
 	assert.equal(isStrongAuthSession(null, true), false, "missing session must not be authenticated");
 	assert.equal(isStrongAuthSession({ authSessionId: null, mfaVerifiedAt: null }, true), false, "password-only JWT must fail when MFA is enabled");
@@ -229,6 +294,10 @@ void Promise.all([
 	assert.equal(canLoginWithPassword({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: now }), true, "legacy Org Admin keeps password flow until explicit migration");
 	assert.equal(canLoginWithPassword({ role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: now }), false, "new or migrated Org Admin uses phone OTP/passkey, not password");
 	assert.equal(canGenerateAccountRecoveryCodes({ role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: true }), true, "passwordless Admin can generate recovery codes with active verified factors");
+	assert.equal(canResetAccountPassword({ role: "ORG_ADMIN", passwordHash: "legacy-hash" }), true, "legacy password-backed Org Admin can reset its password");
+	assert.equal(canResetAccountPassword({ role: "ORG_ADMIN", passwordHash: null }), false, "password reset cannot give a passwordless Org Admin a password");
+	assert.equal(canResetAccountPassword({ role: "ORG_USER", passwordHash: null }), false, "password reset cannot give a passwordless employee a password");
+	assert.equal(canResetAccountPassword({ role: "SUPER_ADMIN", passwordHash: "admin-hash" }), true, "Super Admin with an existing password can recover it");
 	assert.equal(canGenerateAccountRecoveryCodes({ role: "ORG_ADMIN", passwordHash: null, phoneVerifiedAt: now, hasActivePasskey: false }), false, "passwordless Admin cannot generate recovery codes before passkey setup");
 	assert.equal(canBootstrapPasswordAdminPhone({ role: "SUPER_ADMIN", passwordHash: "super-hash", phoneVerifiedAt: null, organizationActive: true }), true, "Super Admin phone bootstrap remains valid");
 	assert.equal(canBootstrapPasswordAdminPhone({ role: "ORG_ADMIN", passwordHash: "legacy-hash", phoneVerifiedAt: null, organizationActive: true }), true, "legacy Org Admin can verify a phone and keep current password until explicit migration");

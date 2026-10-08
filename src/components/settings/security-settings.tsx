@@ -6,6 +6,7 @@ import { Fingerprint, Loader2, MonitorSmartphone, ShieldCheck, Trash2 } from "lu
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { LegacyAdminMigration } from "@/components/admin/legacy-admin-migration";
 
 type Device = { id: string; credentialId: string; deviceName: string; deviceType: string | null; backedUp: boolean; createdAt: string; lastUsedAt: string | null; revokedAt: string | null };
 type Session = { id: string; createdAt: string; lastUsedAt: string; expiresAt: string; isCurrent: boolean };
@@ -18,6 +19,8 @@ export function SecuritySettings() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordlessAccount, setPasswordlessAccount] = useState(false);
+  const [authenticationReady, setAuthenticationReady] = useState(false);
+  const [role, setRole] = useState("");
   const [phone, setPhone] = useState("");
   const [phoneOtp, setPhoneOtp] = useState("");
   const [phoneResendIn, setPhoneResendIn] = useState(0);
@@ -33,6 +36,8 @@ export function SecuritySettings() {
     setPhoneVerified(Boolean(result.phoneVerified));
     setPhone(result.phone || "");
     setPasswordlessAccount(result.passwordless === true);
+    setAuthenticationReady(result.authenticationReady === true);
+    setRole(result.role || "");
   };
 
   useEffect(() => {
@@ -43,7 +48,7 @@ export function SecuritySettings() {
         if (!response.ok) throw new Error("Could not load security devices");
         return response.json();
       })
-      .then((result) => { if (active) { setDevices(result.devices); setSessions(result.sessions); setPhoneVerified(Boolean(result.phoneVerified)); setPhone(result.phone || ""); setPasswordlessAccount(result.passwordless === true); } })
+      .then((result) => { if (active) { setDevices(result.devices); setSessions(result.sessions); setPhoneVerified(Boolean(result.phoneVerified)); setPhone(result.phone || ""); setPasswordlessAccount(result.passwordless === true); setAuthenticationReady(result.authenticationReady === true); setRole(result.role || ""); } })
       .catch((error: unknown) => { if (active && !(error instanceof DOMException && error.name === "AbortError")) toast.error("Could not load security settings"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; controller.abort(); };
@@ -172,6 +177,7 @@ export function SecuritySettings() {
       <Card>
         <CardHeader><CardTitle>Recovery codes</CardTitle><CardDescription>Generate one-time codes for account recovery. They are stored as hashes and displayed only once.</CardDescription></CardHeader>
         <CardContent className="space-y-3">
+          {passwordlessAccount && <p className="text-sm text-muted-foreground">Passwordless account: codes require a verified phone and active passkey; recovery never restores a password.</p>}
           {!passwordlessAccount && <input type="password" autoComplete="current-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm your password" className="h-10 w-full rounded-md border bg-background px-3 text-sm sm:max-w-sm" />}
           <Button variant="outline" disabled={(!passwordlessAccount && !confirmPassword) || pending || (passwordlessAccount && (!phoneVerified || devices.every((device) => device.revokedAt)))} onClick={() => void generateRecoveryCodes().catch((error) => toast.error(error.message))}>Generate new recovery codes</Button>
           {recoveryCodes.length > 0 && <div className="grid grid-cols-2 gap-2 rounded-xl border bg-muted/30 p-4 font-mono text-sm">{recoveryCodes.map((code) => <code key={code}>{code}</code>)}</div>}
@@ -179,6 +185,10 @@ export function SecuritySettings() {
           {recoveryCodes.length > 0 && <Button variant="outline" onClick={downloadRecoveryCodes}>Download codes</Button>}
         </CardContent>
       </Card>
+      {role === "ORG_ADMIN" && !passwordlessAccount && <Card>
+        <CardHeader><CardTitle>Legacy password account</CardTitle><CardDescription>Your account remains password-backed until an explicit migration succeeds. Phone verification and passkey setup do not silently change your login method.</CardDescription></CardHeader>
+        <CardContent><LegacyAdminMigration phoneVerified={phoneVerified} hasActivePasskey={devices.some((device) => !device.revokedAt)} authenticationReady={authenticationReady} /></CardContent>
+      </Card>}
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><MonitorSmartphone className="size-5" />Active sessions</CardTitle><CardDescription>Revoking a session signs that device out on its next request.</CardDescription></CardHeader>
         <CardContent className="space-y-3">

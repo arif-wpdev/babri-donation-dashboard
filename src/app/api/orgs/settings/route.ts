@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { encrypt, decrypt } from "@/lib/encryption";
 import { requireAuth } from "@/lib/rbac";
+import { ensureSameOrigin } from "@/lib/auth-security";
+import { canAccessAdminArea, canManageOrganizationData } from "@/lib/auth-session-policy";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     let session;
     try { session = await requireAuth(); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    if (!canAccessAdminArea(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     if (!session.orgId) return NextResponse.json({ error: "Unauthorized or missing organization" }, { status: 401 });
     const orgId = session.orgId;
+    const activeOrganization = await prisma.organization.findFirst({ where: { id: orgId, deletedAt: null }, select: { id: true } });
+    if (!canManageOrganizationData({ actorRole: session.role, actorOrgId: session.orgId, targetOrgId: orgId, targetOrganizationActive: Boolean(activeOrganization) })) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
@@ -77,10 +83,10 @@ export async function GET(req: NextRequest) {
       hasDonorBackupB2ApplicationKey: !!org.donorBackupB2ApplicationKey,
       donorBackupLastRunAt: org.donorBackupLastRunAt,
       donorBackupLastStatus: org.donorBackupLastStatus,
-      donorBackupLastError: session.role === "ORG_USER" ? null : org.donorBackupLastError,
+      donorBackupLastError: org.donorBackupLastError,
       donorBackupLastCount: org.donorBackupLastCount,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[SETTINGS_GET]", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
@@ -88,13 +94,17 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    ensureSameOrigin(req);
     let session;
     try { session = await requireAuth(); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+    if (!canAccessAdminArea(session.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     if (!session.orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     if (session.role !== "ORG_ADMIN" && session.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const activeOrganization = await prisma.organization.findFirst({ where: { id: session.orgId, deletedAt: null }, select: { id: true } });
+    if (!canManageOrganizationData({ actorRole: session.role, actorOrgId: session.orgId, targetOrgId: session.orgId, targetOrganizationActive: Boolean(activeOrganization) })) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await req.json();
     const {
@@ -105,7 +115,7 @@ export async function PUT(req: NextRequest) {
       b2ApplicationKey,
     } = body;
 
-    const updateData: any = {};
+    const updateData: Prisma.OrganizationUpdateInput = {};
     if (wcBaseUrl !== undefined) updateData.wcBaseUrl = wcBaseUrl;
     
     // Encrypt the keys if they were changed
@@ -204,7 +214,8 @@ export async function PUT(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "Invalid request origin") return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     console.error("[SETTINGS_PUT]", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }

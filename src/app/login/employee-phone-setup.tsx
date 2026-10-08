@@ -17,11 +17,11 @@ function normalizeBangladeshPhone(input: string) {
   return value;
 }
 
-export function EmployeePhoneSetup() {
+export function EmployeePhoneSetup({ initialPhone = "" }: { initialPhone?: string }) {
   const router = useRouter();
   const [step, setStep] = useState<"phone" | "otp" | "passkey">("phone");
   const [targetRole, setTargetRole] = useState<"ORG_USER" | "ORG_ADMIN">("ORG_USER");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(initialPhone);
   const [otp, setOtp] = useState("");
   const [attemptsRemaining, setAttemptsRemaining] = useState(3);
   const [resendIn, setResendIn] = useState(0);
@@ -30,6 +30,10 @@ export function EmployeePhoneSetup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const canonicalPhone = normalizeBangladeshPhone(phone);
+
+  useEffect(() => {
+    setPhone(initialPhone);
+  }, [initialPhone]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

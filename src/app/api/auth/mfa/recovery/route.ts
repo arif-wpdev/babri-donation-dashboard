@@ -28,6 +28,8 @@ export async function POST(request: Request) {
       return Response.json({ success: true, recoveryCodes: codes });
     }
     if (body?.action === "use") {
+      const account = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, disabledAt: true, org: { select: { deletedAt: true } } } });
+      if (!account || account.disabledAt || account.org?.deletedAt) return Response.json({ error: "Recovery is unavailable for this account." }, { status: 403 });
       if (typeof body.code !== "string" || body.code.length > 64) return Response.json({ error: "Invalid recovery code." }, { status: 400 });
       const codeHash = hashAuthValue(body.code.trim().toUpperCase(), "recovery");
       const candidates = await prisma.authRecoveryCode.findMany({ where: { userId: user.id, usedAt: null }, select: { id: true, codeHash: true }, take: 20 });

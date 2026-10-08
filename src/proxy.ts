@@ -12,6 +12,7 @@ const { auth } = NextAuth(authConfig);
 //
 // /login, /register          → Redirect authenticated users to /dashboard
 // /dashboard/**              → Any authenticated user
+// /admin/**                  → SUPER_ADMIN or ORG_ADMIN
 // /super-admin/**            → SUPER_ADMIN only
 // /api/orgs POST             → SUPER_ADMIN only
 // /api/cron/**               → CRON_SECRET header only (no session required)
@@ -54,6 +55,7 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
       || pathname === "/api/auth/mfa/recovery/verify"
       || pathname === "/api/auth/mfa/password-reset/request"
       || pathname === "/api/auth/mfa/password-reset/verify"
+      || pathname === "/api/auth/mfa/recovery"
       || pathname === "/api/auth/mfa/session";
     if (pathname.startsWith("/api/auth/mfa/mobile-lock/")) {
       if (!isStrongAuthenticated) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,7 +74,7 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
   if (pathname === "/login" || pathname === "/register") {
     if (isStrongAuthenticated) {
       const destination =
-        role === "SUPER_ADMIN" ? "/super-admin/organizations" : "/dashboard";
+          role === "SUPER_ADMIN" ? "/admin/organizations" : role === "ORG_ADMIN" ? "/admin" : "/dashboard";
       return NextResponse.redirect(new URL(destination, nextUrl));
     }
     if (isAuthenticated && !isStrongAuthenticated) {
@@ -83,12 +85,34 @@ export default auth((req: Parameters<typeof auth>[0] extends ((...args: infer A)
     return NextResponse.next();
   }
 
+  // The Super Admin bootstrap screen contains no organization data and proves
+  // ownership with the existing account email/password plus a one-time SMS.
+  if (pathname === "/setup/admin") return NextResponse.next();
+
+  // Public invite setup is deliberately limited to OTP/passkey enrollment;
+  // the server-side onboarding routes bind it to a pre-registered phone.
+  if (pathname === "/setup") return NextResponse.next();
+  if (pathname === "/recover/password" || pathname === "/recover/account") return NextResponse.next();
+
   // ── Super Admin routes ────────────────────────────────────────────────────
   if (pathname.startsWith("/super-admin")) {
     if (!isStrongAuthenticated) {
       return NextResponse.redirect(new URL("/login", nextUrl));
     }
     if (role !== "SUPER_ADMIN") {
+      return NextResponse.redirect(new URL("/dashboard", nextUrl));
+    }
+    return NextResponse.next();
+  }
+
+  // ── Admin routes: organization administrators and Super Admin ─────────────
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    if (!isStrongAuthenticated) {
+      const loginUrl = new URL("/login", nextUrl);
+      loginUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+    if (role !== "SUPER_ADMIN" && role !== "ORG_ADMIN") {
       return NextResponse.redirect(new URL("/dashboard", nextUrl));
     }
     return NextResponse.next();

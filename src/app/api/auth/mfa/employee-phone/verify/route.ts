@@ -28,9 +28,9 @@ export async function POST(request: Request) {
     ]);
     if (!rate.allowed) return Response.json({ error: "Verification is temporarily unavailable." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
 
-    const employee = await prisma.user.findUnique({ where: { phone }, select: { id: true, role: true, phone: true, phoneVerifiedAt: true, passwordHash: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } } });
+    const employee = await prisma.user.findUnique({ where: { phone }, select: { id: true, role: true, phone: true, disabledAt: true, phoneVerifiedAt: true, passwordHash: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } } });
     const isInvitedOrgAdmin = employee?.role === "ORG_ADMIN" && employee.passwordHash === null && employee.phoneVerifiedAt === null;
-    if (!employee || (employee.role !== "ORG_USER" && !isInvitedOrgAdmin) || !canRequestEmployeeEnrollmentOtp({ role: employee.role, phoneVerifiedAt: employee.phoneVerifiedAt, passwordHash: employee.passwordHash, hasActivePasskey: employee.webAuthnCredentials.length > 0, organizationActive: Boolean(employee.orgId) && !employee.org?.deletedAt })) return Response.json({ error: "Verification failed." }, { status: 400 });
+    if (!employee || employee.disabledAt || (employee.role !== "ORG_USER" && !isInvitedOrgAdmin) || !canRequestEmployeeEnrollmentOtp({ role: employee.role, phoneVerifiedAt: employee.phoneVerifiedAt, passwordHash: employee.passwordHash, hasActivePasskey: employee.webAuthnCredentials.length > 0, organizationActive: Boolean(employee.orgId) && !employee.org?.deletedAt })) return Response.json({ error: "Verification failed." }, { status: 400 });
 
     const identifierHash = hashAuthValue(phone, "employee-phone-bootstrap");
     const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "PHONE_VERIFICATION" } } });
@@ -54,9 +54,9 @@ export async function POST(request: Request) {
     const verified = await prisma.$transaction(async (tx) => {
       const claimed = await tx.authChallenge.updateMany({ where: { id: challenge.id, userId: employee.id, otpHash: challenge.otpHash, purpose: phone, failedAttempts: { lt: OTP_MAX_FAILED_ATTEMPTS }, consumedAt: null, lockedUntil: null, otpExpiresAt: { gt: now } }, data: { consumedAt: now, verifiedAt: now, otpHash: null } });
       if (claimed.count !== 1) return false;
-      const currentEmployee = await tx.user.findUnique({ where: { id: employee.id }, select: { role: true, phone: true, phoneVerifiedAt: true, passwordHash: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } } });
+      const currentEmployee = await tx.user.findUnique({ where: { id: employee.id }, select: { role: true, phone: true, disabledAt: true, phoneVerifiedAt: true, passwordHash: true, orgId: true, org: { select: { deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } } });
       const currentIsInvitedOrgAdmin = currentEmployee?.role === "ORG_ADMIN" && currentEmployee.passwordHash === null && currentEmployee.phoneVerifiedAt === null;
-      if (!currentEmployee || currentEmployee.phone !== phone || currentEmployee.orgId !== employee.orgId || (currentEmployee.role !== "ORG_USER" && !currentIsInvitedOrgAdmin) || !canRequestEmployeeEnrollmentOtp({ role: currentEmployee.role, phoneVerifiedAt: currentEmployee.phoneVerifiedAt, passwordHash: currentEmployee.passwordHash, hasActivePasskey: currentEmployee.webAuthnCredentials.length > 0, organizationActive: Boolean(currentEmployee.orgId) && !currentEmployee.org?.deletedAt })) return false;
+      if (!currentEmployee || currentEmployee.disabledAt || currentEmployee.phone !== phone || currentEmployee.orgId !== employee.orgId || (currentEmployee.role !== "ORG_USER" && !currentIsInvitedOrgAdmin) || !canRequestEmployeeEnrollmentOtp({ role: currentEmployee.role, phoneVerifiedAt: currentEmployee.phoneVerifiedAt, passwordHash: currentEmployee.passwordHash, hasActivePasskey: currentEmployee.webAuthnCredentials.length > 0, organizationActive: Boolean(currentEmployee.orgId) && !currentEmployee.org?.deletedAt })) return false;
       await tx.loginPreAuth.create({ data: { userId: employee.id, tokenHash: hashAuthValue(setupToken, "employee-passkey-enrollment"), expiresAt: new Date(now.getTime() + 10 * 60_000), deliveryChannel: "employee-enrollment", passkeyOnly: true } });
       return true;
     }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 8_000 });
