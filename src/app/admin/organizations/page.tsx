@@ -8,7 +8,8 @@ export default async function AdminOrganizationsPage() {
   try { user = await requireAdminAreaAccess(); } catch (error) {
     if (error instanceof ApiError && error.statusCode === 403) redirect("/dashboard");
     if (error instanceof ApiError && error.statusCode === 423) redirect("/dashboard");
-    redirect("/login?callbackUrl=%2Fadmin%2Forganizations");
+    if (error instanceof ApiError && error.statusCode === 401) redirect("/login?callbackUrl=%2Fadmin%2Forganizations");
+    redirect("/dashboard");
   }
   if (user.role !== "SUPER_ADMIN") redirect("/admin");
 

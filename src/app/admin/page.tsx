@@ -10,7 +10,8 @@ export default async function AdminHomePage() {
   try { user = await requireAdminAreaAccess(); } catch (error) {
     if (error instanceof ApiError && error.statusCode === 403) redirect("/dashboard");
     if (error instanceof ApiError && error.statusCode === 423) redirect("/dashboard");
-    redirect("/login?callbackUrl=%2Fadmin");
+    if (error instanceof ApiError && error.statusCode === 401) redirect("/login?callbackUrl=%2Fadmin");
+    redirect("/dashboard");
   }
   if (user.role === "SUPER_ADMIN") redirect("/admin/organizations");
   const activeOrganization = user.orgId ? await prisma.organization.findFirst({ where: { id: user.orgId, deletedAt: null }, select: { id: true } }) : null;

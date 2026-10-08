@@ -518,7 +518,9 @@ export async function requireStrongSession(user: StrongSessionUser) {
       const latest = await prisma.authSession.findUnique({ where: { id: user.authSessionId }, select: { userId: true, expiresAt: true, revokedAt: true, lastUsedAt: true, mobileLockEnabled: true } });
       if (!latest || !isActiveSessionRecord(latest, user.id, new Date())) throw new Error("Unauthorized");
       if (isMobileAppSessionLocked({ role: account.role, lockEnabled: latest.mobileLockEnabled, lastUsedAt: latest.lastUsedAt, now: new Date() })) throw new MobileAppSessionLockedError();
-      throw new Error("Session state changed; retry the request");
+      // Another request may have refreshed the same active session concurrently.
+      // Treat that as a successful touch rather than a transient 401 redirect loop.
+      if (latest.mobileLockEnabled) throw new MobileAppSessionUnlockRequiredError();
     }
   }
   return { ...user, name: account.name, email: account.email, role: account.role, orgId: account.orgId, orgSlug: account.org?.slug ?? null };

@@ -33,6 +33,7 @@ void Promise.all([
 	sanitizeSecurityEventDetails,
 	}, {
 		isStrongAuthSession,
+		hasMatchingAuthAccountClaims,
 		isActiveSessionRecord,
 		isMobileAppSessionIdle,
 		isMobileAppSessionLocked,
@@ -257,6 +258,9 @@ void Promise.all([
 	assert.equal(isStrongAuthSession({ authSessionId: "session-1", mfaVerifiedAt: null }, true), false, "session without MFA proof must fail when MFA is enabled");
 	assert.equal(isStrongAuthSession({ authSessionId: "session-1", mfaVerifiedAt: Date.now() }, true), true, "MFA-authenticated session should pass the signed-claim gate");
 	assert.equal(isStrongAuthSession({ authSessionId: null, mfaVerifiedAt: null }, false), true, "legacy sessions remain usable only while MFA rollout is disabled");
+	assert.equal(hasMatchingAuthAccountClaims({ tokenRole: "ORG_ADMIN", tokenOrgId: "org-1", accountRole: "ORG_ADMIN", accountOrgId: "org-1" }), true, "JWT account claims remain valid when role and org match the current account");
+	assert.equal(hasMatchingAuthAccountClaims({ tokenRole: "ORG_ADMIN", tokenOrgId: "org-1", accountRole: "ORG_ADMIN", accountOrgId: "org-2" }), false, "JWT org changes invalidate stale claims instead of redirect-looping between Admin and login");
+	assert.equal(hasMatchingAuthAccountClaims({ tokenRole: "ORG_ADMIN", tokenOrgId: "org-1", accountRole: "ORG_USER", accountOrgId: "org-1" }), false, "JWT role changes invalidate stale authorization claims");
 	assert.equal(isActiveSessionRecord({ userId: "user-1", expiresAt: new Date(now.getTime() + 1), revokedAt: null }, "user-1", now), true, "unrevoked, unexpired server session should be active");
 	assert.equal(isActiveSessionRecord({ userId: "user-1", expiresAt: now, revokedAt: null }, "user-1", now), false, "expired session must be rejected");
 	assert.equal(isActiveSessionRecord({ userId: "user-1", expiresAt: new Date(now.getTime() + 1), revokedAt: now }, "user-1", now), false, "revoked session must be rejected");

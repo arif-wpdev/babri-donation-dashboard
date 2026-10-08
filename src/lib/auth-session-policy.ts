@@ -7,6 +7,15 @@ export function isStrongAuthSession(
   return Boolean(user.authSessionId && user.mfaVerifiedAt);
 }
 
+export function hasMatchingAuthAccountClaims(input: {
+  tokenRole: string | null | undefined;
+  tokenOrgId: string | null | undefined;
+  accountRole: string;
+  accountOrgId: string | null;
+}) {
+  return input.tokenRole === input.accountRole && (input.tokenOrgId ?? null) === input.accountOrgId;
+}
+
 export function isActiveSessionRecord(
   session: { userId: string; expiresAt: Date; revokedAt: Date | null } | null,
   userId: string,

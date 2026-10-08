@@ -13,7 +13,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       redirect("/dashboard");
     }
     if (error instanceof ApiError && error.statusCode === 403) redirect("/dashboard");
-    redirect("/login?callbackUrl=%2Fadmin");
+    if (error instanceof ApiError && error.statusCode === 401) {
+      redirect("/login?callbackUrl=%2Fadmin");
+    }
+    // Do not redirect to /login for server or transient session errors: Proxy
+    // may still see an optimistic valid JWT and redirect login back here.
+    redirect("/dashboard");
   }
 
   if (user.role === "ORG_ADMIN") {
