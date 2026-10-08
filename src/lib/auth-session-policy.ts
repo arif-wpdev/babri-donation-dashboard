@@ -217,6 +217,18 @@ export function canAdministerEmployeeAccount(input: {
   });
 }
 
+export function canDisableAdminManagedAccount(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetRole: string;
+  targetOrgId: string | null;
+  targetOrganizationActive: boolean;
+}) {
+  return input.actorRole === "SUPER_ADMIN"
+    ? input.targetRole !== "SUPER_ADMIN" && (!input.targetOrgId || input.targetOrganizationActive)
+    : canAdministerEmployeeAccount(input);
+}
+
 export function canAuthenticateAccount(input: { role: string; disabledAt: Date | null; organizationActive: boolean }) {
   return !input.disabledAt && (input.role === "SUPER_ADMIN" || input.organizationActive);
 }
@@ -231,6 +243,42 @@ export function canReactivateEmployee(input: {
 }) {
   return input.currentlyDisabled && canAdministerEmployeeAccount(input);
 }
+
+export function canManageUserAccountStatus(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetRole: string;
+  targetOrgId: string | null;
+  targetOrganizationActive: boolean;
+}) {
+  return canDisableAdminManagedAccount(input);
+}
+
+export function canPermanentlyDeleteUser(input: {
+  actorRole: string;
+  targetRole: string;
+  targetOrgId?: string | null;
+  targetDisabled: boolean;
+  targetOrganizationActive: boolean;
+}) {
+  return input.actorRole === "SUPER_ADMIN" && input.targetRole !== "SUPER_ADMIN" && input.targetDisabled && (input.targetOrgId == null || input.targetOrganizationActive);
+}
+
+export function canReactivateManagedUser(input: {
+  actorRole: string;
+  actorOrgId: string | null;
+  targetRole: string;
+  targetOrgId: string | null;
+  targetOrganizationActive: boolean;
+  currentlyDisabled: boolean;
+}) {
+  return input.currentlyDisabled && (
+    (input.actorRole === "SUPER_ADMIN" && input.targetRole !== "SUPER_ADMIN" && (!input.targetOrgId || input.targetOrganizationActive)) ||
+    canAdministerEmployeeAccount(input)
+  );
+}
+
+
 
 export function canRetireLegacyAuthentication(input: { outstandingLegacyAccounts: number; ownerConfirmedExemptions: number; recoveryExerciseComplete: boolean }) {
   return input.outstandingLegacyAccounts === 0 && input.ownerConfirmedExemptions >= 0 && input.recoveryExerciseComplete;

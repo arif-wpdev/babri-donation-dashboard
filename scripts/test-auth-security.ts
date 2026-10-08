@@ -70,6 +70,10 @@ void Promise.all([
 		getAdminAccountStatusDetails,
 		getRecoveryReadiness,
 		canAdministerEmployeeAccount,
+		canDisableAdminManagedAccount,
+		canManageUserAccountStatus,
+		canReactivateManagedUser,
+		canPermanentlyDeleteUser,
 		canAuthenticateAccount,
 		canReactivateEmployee,
 		canRetireLegacyAuthentication,
@@ -235,6 +239,17 @@ void Promise.all([
 	assert.equal(canAdministerEmployeeAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-1", targetOrganizationActive: true }), true, "Org Admin may manage an employee in its active org");
 	assert.equal(canAdministerEmployeeAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_ADMIN", targetOrgId: "org-1", targetOrganizationActive: true }), false, "Org Admin cannot disable another admin account");
 	assert.equal(canAdministerEmployeeAccount({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_USER", targetOrgId: "org-2", targetOrganizationActive: true }), false, "Org Admin cannot manage an employee from another org");
+	assert.equal(canManageUserAccountStatus({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "ORG_ADMIN", targetOrgId: "org-2", targetOrganizationActive: true }), true, "Super Admin can disable an Org Admin in an active org");
+	assert.equal(canDisableAdminManagedAccount({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "ORG_ADMIN", targetOrgId: "org-2", targetOrganizationActive: true }), true, "Super Admin can disable an Org Admin as well as employees");
+	assert.equal(canManageUserAccountStatus({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "SUPER_ADMIN", targetOrgId: null, targetOrganizationActive: true }), false, "Super Admin cannot disable another Super Admin through the account status endpoint");
+	assert.equal(canManageUserAccountStatus({ actorRole: "ORG_ADMIN", actorOrgId: "org-1", targetRole: "ORG_ADMIN", targetOrgId: "org-1", targetOrganizationActive: true }), false, "Org Admin cannot disable another Org Admin");
+	assert.equal(canReactivateManagedUser({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "ORG_ADMIN", targetOrgId: "org-2", targetOrganizationActive: true, currentlyDisabled: true }), true, "Super Admin can re-enable a disabled Org Admin");
+	assert.equal(canReactivateManagedUser({ actorRole: "SUPER_ADMIN", actorOrgId: null, targetRole: "ORG_ADMIN", targetOrgId: "org-2", targetOrganizationActive: true, currentlyDisabled: false }), false, "Re-enable operation requires a disabled account");
+	assert.equal(canPermanentlyDeleteUser({ actorRole: "SUPER_ADMIN", targetRole: "ORG_ADMIN", targetDisabled: true, targetOrganizationActive: true }), true, "Super Admin can permanently delete a disabled non-Super-Admin account in an active org");
+	assert.equal(canPermanentlyDeleteUser({ actorRole: "SUPER_ADMIN", targetRole: "ORG_ADMIN", targetOrgId: null, targetDisabled: true, targetOrganizationActive: false }), true, "Super Admin can permanently delete a disabled global Org Admin without an org");
+	assert.equal(canPermanentlyDeleteUser({ actorRole: "SUPER_ADMIN", targetRole: "ORG_ADMIN", targetDisabled: false, targetOrganizationActive: true }), false, "Permanent deletion requires prior disablement");
+	assert.equal(canPermanentlyDeleteUser({ actorRole: "SUPER_ADMIN", targetRole: "SUPER_ADMIN", targetDisabled: true, targetOrganizationActive: true }), false, "Super Admin cannot permanently delete a Super Admin account");
+	assert.equal(canPermanentlyDeleteUser({ actorRole: "ORG_ADMIN", targetRole: "ORG_USER", targetDisabled: true, targetOrganizationActive: true }), false, "Org Admin cannot permanently delete employee accounts");
 	assert.equal(canAuthenticateAccount({ role: "ORG_USER", disabledAt: now, organizationActive: true }), false, "Disabled employee cannot authenticate");
 	assert.equal(canAuthenticateAccount({ role: "ORG_USER", disabledAt: null, organizationActive: false }), false, "Employee in inactive org cannot authenticate");
 	assert.equal(canAuthenticateAccount({ role: "ORG_USER", disabledAt: null, organizationActive: true }), true, "Active employee in active org can authenticate");

@@ -8,6 +8,7 @@ import { requireStrongSession } from "@/lib/auth-security";
 import { MobileAppLock } from "@/components/pwa/mobile-app-lock";
 import { enableMobileLockForExistingSession } from "@/lib/mobile-app-lock";
 import { MobileAppSessionLockedError } from "@/lib/auth-security";
+import { prisma } from "@/lib/prisma";
 
 export default async function DashboardLayout({
   children,
@@ -29,12 +30,18 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  let headerUser: typeof session.user & { phone?: string | null } = session.user;
+  if (session.user.role === "ORG_ADMIN") {
+    const account = await prisma.user.findUnique({ where: { id: session.user.id }, select: { phone: true, phoneVerifiedAt: true } });
+    headerUser = { ...session.user, phone: account?.phoneVerifiedAt ? account.phone : null };
+  }
+
   return (
     <SidebarProvider>
       <MobileAppLock />
       <AppSidebar userRole={session.user.role} />
       <SidebarInset className="bg-background overflow-hidden flex flex-col h-screen">
-        <Header user={session.user} />
+        <Header user={headerUser} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-24 md:pb-8 relative">
           <div className="mx-auto max-w-7xl">
             {children}

@@ -12,7 +12,7 @@ export async function GET() {
 
     const users = await prisma.user.findMany({
       where: actor.role === "SUPER_ADMIN"
-        ? { role: { in: ["ORG_ADMIN", "ORG_USER"] }, orgId: { not: null }, org: { deletedAt: null } }
+        ? { role: { in: ["ORG_ADMIN", "ORG_USER"] }, OR: [{ orgId: null }, { org: { deletedAt: null } }] }
         : { role: "ORG_USER", orgId: actor.orgId!, org: { deletedAt: null } },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, phone: true, phoneVerifiedAt: true, passwordHash: true, disabledAt: true, role: true, orgId: true, createdAt: true, org: { select: { name: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } },

@@ -17,7 +17,7 @@ import { Wallet } from "lucide-react";
 import Link from "next/link";
 import { useAdSpend } from "@/hooks/use-ad-spend";
 
-export function Header({ user }: { user?: { name?: string | null, email?: string | null, role?: string } }) {
+export function Header({ user }: { user?: { name?: string | null, email?: string | null, phone?: string | null, role?: string } }) {
   const router = useRouter();
   const pathname = usePathname();
   const isDashboardHome = pathname === "/dashboard";
@@ -54,7 +54,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
     : `৳${availableBalance.toLocaleString("en-BD", { maximumFractionDigits: 2 })}`;
 
   return (
-    <header className="flex h-20 shrink-0 items-center justify-between gap-2 px-6 lg:px-8 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="flex h-20 shrink-0 items-center justify-between gap-2 px-6 lg:px-8 border-b border-border/40 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <SidebarTrigger className="-ml-1 text-muted-foreground hover:text-foreground transition-colors hidden md:block" />
         <Separator orientation="vertical" className="h-6 bg-border/60 hidden md:block" />
@@ -86,11 +86,11 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
         <DropdownMenu>
           <DropdownMenuTrigger className="outline-none">
             <div className="flex items-center gap-3 pl-2 border-l border-border/40 cursor-pointer hover:opacity-80 transition-opacity">
-              <div className="flex flex-col items-end hidden md:flex">
+              <div className="hidden flex-col items-end md:flex">
                 <span className="text-sm font-semibold leading-none mb-1">
                   {user?.name || (user?.role === "ORG_USER" ? "Employee" : "Admin")}
                 </span>
-                <span className="text-xs text-muted-foreground leading-none">{user?.email || "No email"}</span>
+                <span className="text-xs text-muted-foreground leading-none">{user?.role === "ORG_ADMIN" ? user.phone || "Phone not verified" : user?.email || "No email"}</span>
               </div>
               <Avatar className="size-10 border-2 border-white shadow-sm">
                 <AvatarImage src="" alt={user?.name || "User"} />
@@ -104,7 +104,9 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
             <div className="flex items-center justify-start gap-2 p-2">
               <div className="flex flex-col space-y-1 leading-none">
                 {user?.name && <p className="font-medium">{user.name}</p>}
-                {user?.email && (
+                {user?.role === "ORG_ADMIN" ? (
+                  <p className="w-50 truncate text-sm text-muted-foreground">{user.phone || "Phone not verified"}</p>
+                ) : user?.email && (
                   <p className="w-[200px] truncate text-sm text-muted-foreground">
                     {user.email}
                   </p>

@@ -20,7 +20,7 @@ export default async function AdminAccountsPage() {
 
   const users = await prisma.user.findMany({
     where: user.role === "SUPER_ADMIN"
-      ? { role: { in: ["ORG_ADMIN", "ORG_USER"] }, orgId: { not: null }, org: { deletedAt: null } }
+      ? { role: { in: ["ORG_ADMIN", "ORG_USER"] }, OR: [{ orgId: null }, { org: { deletedAt: null } }] }
       : { role: "ORG_USER", orgId: user.orgId!, org: { deletedAt: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, phone: true, phoneVerifiedAt: true, passwordHash: true, disabledAt: true, role: true, orgId: true, createdAt: true, org: { select: { name: true, deletedAt: true } }, webAuthnCredentials: { where: { revokedAt: null }, select: { id: true }, take: 1 } },

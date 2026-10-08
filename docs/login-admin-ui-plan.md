@@ -73,7 +73,7 @@ Status: **Implemented in code; legacy route retirement intentionally not enabled
 
 Goal: Existing accounts stay usable during rollout; provide measurable completion before removing legacy paths.
 
-- Super Admin user list shows status derived from safe fields only: legacy password account, phone unverified, passkey missing, ready to migrate, or passwordless. Never return password hashes.
+- Super Admin user list shows status derived from safe fields only: legacy password account and blockers, phone unverified, passkey missing, ready to migrate, disabled, or passwordless. Never return password hashes.
 - Provide a per-account migration/readiness workflow; legacy Org Admin keeps password login until explicit successful migration.
 - Migration requires password proof, registered and verified phone, active passkey, active organization, ready MFA config; atomically null password hash and revoke sessions/tickets.
 - Keep reset/recovery available for eligible legacy accounts; after migration, offer recovery codes only with verified phone and active passkey.
@@ -88,6 +88,7 @@ Implementation notes:
 - The additive migration `prisma/migrations/20261008150000_user_disablement/migration.sql` and Prisma schema/client support are prepared. The migration has **not** been applied to any database.
 - Reset, recovery-code, passwordless, and post-migration eligibility checks are explicit policy helpers and included in the acceptance suite.
 - Legacy route retirement is intentionally not automatic: the Admin page reports active legacy account count, but owner-confirmed exemptions and an exercised recovery runbook are operational inputs that source code cannot safely infer. Do not remove legacy routes until those are recorded and confirmed.
+- Super Admin can disable/re-enable non-Super-Admin accounts in active orgs and permanently delete only after disablement plus explicit `DELETE` confirmation. Org Admin account controls remain limited to employee status changes inside their org; Org Admin cannot permanently delete accounts.
 
 ## Release / validation checklist
 
