@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, ShieldCheck } from "lucide-react";
+import { Download, LogOut, ShieldCheck } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,6 +16,13 @@ import { useRouter } from "next/navigation";
 import { Wallet } from "lucide-react";
 import Link from "next/link";
 import { useAdSpend } from "@/hooks/use-ad-spend";
+import { Button } from "@/components/ui/button";
+
+declare global {
+  interface WindowEventMap {
+    "open-pwa-install": Event;
+  }
+}
 
 export function Header({ user }: { user?: { name?: string | null, email?: string | null, phone?: string | null, role?: string } }) {
   const router = useRouter();
@@ -81,7 +88,9 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
       </div>
 
       <div className="flex items-center gap-6">
-
+        <Button variant="outline" size="sm" onClick={() => window.dispatchEvent(new Event("open-pwa-install"))} className="hidden gap-2 md:inline-flex">
+          <Download className="size-4" />Install app
+        </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger className="outline-none">
@@ -107,7 +116,7 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
                 {user?.role === "ORG_ADMIN" ? (
                   <p className="w-50 truncate text-sm text-muted-foreground">{user.phone || "Phone not verified"}</p>
                 ) : user?.email && (
-                  <p className="w-[200px] truncate text-sm text-muted-foreground">
+                  <p className="w-50 truncate text-sm text-muted-foreground">
                     {user.email}
                   </p>
                 )}
