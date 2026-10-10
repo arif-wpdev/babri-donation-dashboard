@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import type { DonationStatus } from "@prisma/client";
 
 interface DonationsParams {
@@ -36,6 +36,8 @@ export function useDonations(params: DonationsParams = {}) {
   return useQuery({
     queryKey: ["donations", params],
     queryFn: () => fetchDonations(params),
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }
 

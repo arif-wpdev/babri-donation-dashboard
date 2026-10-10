@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OverlayLoader } from "@/components/ui/overlay-loader";
 
 type BackupConfig = {
   donorBackupEnabled: boolean;
@@ -146,6 +147,9 @@ export function DonorBackupSettings() {
 
   return (
     <Card className="border-none bg-white shadow-sm">
+      <OverlayLoader visible={update.isPending} message="Saving Backup Settings..." />
+      <OverlayLoader visible={isRunning} message="Running Backup..." />
+      <OverlayLoader visible={isTesting} message="Testing Connection..." />
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>

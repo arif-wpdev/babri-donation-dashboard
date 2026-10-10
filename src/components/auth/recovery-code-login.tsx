@@ -7,6 +7,7 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { OverlayLoader } from "@/components/ui/overlay-loader";
 
 export function RecoveryCodeLogin() {
   const router = useRouter();
@@ -68,6 +69,7 @@ export function RecoveryCodeLogin() {
 
   return (
     <div className="space-y-5">
+      <OverlayLoader visible={pending} message="Verifying Recovery Code..." />
       <div className="rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground"><ShieldCheck className="mr-2 inline size-4 text-primary" />A recovery code is single-use and replaces the OTP/passkey factor only. Password-secured administrators must still prove their password first.</div>
       {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
       {adminSetupRequired && <Link href="/setup/admin" className="block text-center text-sm font-medium text-primary underline">Open administrator phone setup</Link>}

@@ -426,6 +426,7 @@ model Donor {
   @@index([orgId])
   @@index([orgId, email])
   @@index([orgId, normalizedPhone])
+  @@index([orgId, lastDonationAt])
   @@map("donors")
 }
 
@@ -490,6 +491,7 @@ model Donation {
   @@index([orgId])
   @@index([orgId, status])
   @@index([orgId, wcDatePaid])
+  @@index([orgId, status, wcDatePaid])
   @@index([donorId])
   @@index([fundId])
   @@map("donations")

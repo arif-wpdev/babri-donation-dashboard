@@ -1,9 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
-import { TrendChart } from "@/components/dashboard/trend-chart";
-import { FundBreakdown } from "@/components/dashboard/fund-breakdown";
-import { RecentDonations } from "@/components/dashboard/recent-donations";
+
+const TrendChart = dynamic(() => import("@/components/dashboard/trend-chart").then((mod) => mod.TrendChart), { 
+  ssr: false, 
+  loading: () => <Skeleton className="h-full w-full rounded-2xl" /> 
+});
+
+const FundBreakdown = dynamic(() => import("@/components/dashboard/fund-breakdown").then((mod) => mod.FundBreakdown), { 
+  ssr: false, 
+  loading: () => <Skeleton className="h-[400px] w-full rounded-2xl" /> 
+});
+
+const RecentDonations = dynamic(() => import("@/components/dashboard/recent-donations").then((mod) => mod.RecentDonations), { 
+  loading: () => <Skeleton className="h-[400px] w-full rounded-2xl" /> 
+});
 import { useState, useMemo } from "react";
 import { DateRange } from "react-day-picker";
 import { subDays, startOfMonth, startOfYear } from "date-fns";

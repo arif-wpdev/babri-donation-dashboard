@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { OverlayLoader } from "@/components/ui/overlay-loader";
 
 export function TdfIntegration() {
   const { data: settings, isLoading } = useWcSettings();
@@ -46,6 +47,8 @@ export function TdfIntegration() {
 
   return (
     <Card className="border-none shadow-sm rounded-2xl bg-white mt-6">
+      <OverlayLoader visible={updateSettings.isPending} message="Saving Settings..." />
+      <OverlayLoader visible={manualSync.isPending} message="Syncing Data..." />
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>

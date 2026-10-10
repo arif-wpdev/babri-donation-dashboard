@@ -9,6 +9,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/types";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { OverlayLoader } from "@/components/ui/overlay-loader";
 
 export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { callbackUrl: string; mfaEnabled: boolean; invitedPhone?: string }) {
   const router = useRouter();
@@ -78,6 +79,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       if (result.next === "passkey") {
         setPasskeyOptions(result.options);
         setStep("passkey");
+        void authenticatePasskey(result.options);
       } else {
         setPasskeyOptions(undefined);
         setStep("otp");
@@ -197,7 +199,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : "Passkey verification failed");
       setStep("passkey");
-      if (employeeLogin || superAdminLogin) setPasskeyOptions(undefined);
+      setPasskeyOptions(undefined);
     } finally {
       setIsPending(false);
     }
@@ -281,6 +283,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
 
   return (
     <div className="w-full">
+      <OverlayLoader visible={isPending} message={step === "passkey" ? "Verifying Passkey..." : step === "otp" ? "Verifying Code..." : "Processing..."} />
       {errorMsg && (
         <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-100 flex items-center justify-center">
           {errorMsg}

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { OverlayLoader } from "@/components/ui/overlay-loader";
 
 export function PasswordRecoveryForm() {
   const router = useRouter();
@@ -57,6 +58,7 @@ export function PasswordRecoveryForm() {
 
   return (
     <div className="space-y-5">
+      <OverlayLoader visible={pending} message={step === "request" ? "Sending Code..." : "Resetting Password..."} />
       <div className="rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground"><ShieldCheck className="mr-2 inline size-4 text-primary" />Recovery codes go only to an account&apos;s already verified registered phone. Phone-only passwordless accounts cannot be given a password through this flow.</div>
       {message && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">{message}</p>}
       {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}

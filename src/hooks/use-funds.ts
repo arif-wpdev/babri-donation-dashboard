@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 
 interface FundsParams {
   page?: number;
@@ -23,6 +23,8 @@ export function useFunds(params: FundsParams = {}) {
   return useQuery({
     queryKey: ["funds", params],
     queryFn: () => fetchFunds(params),
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -37,5 +39,6 @@ export function useFund(fundId: string) {
     queryKey: ["funds", fundId],
     queryFn: () => fetchFundById(fundId),
     enabled: !!fundId,
+    staleTime: 5 * 60 * 1000,
   });
 }
