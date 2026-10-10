@@ -74,7 +74,8 @@ export default function DashboardPage() {
     }
   }, [filter, customRange]);
 
-  const { data, isLoading } = useDashboardStats(dateRange);
+  const { data, isLoading, isFetching } = useDashboardStats(dateRange);
+  const loading = isLoading || isFetching;
 
   const periodLabel = useMemo(() => {
     switch (filter) {
@@ -94,7 +95,7 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-4 lg:gap-6 pb-10">
       <KpiCards 
         data={data?.kpis} 
-        isLoading={isLoading} 
+        isLoading={loading} 
         filter={filter}
         setFilter={setFilter}
         dateRange={dateRange}
@@ -106,14 +107,14 @@ export default function DashboardPage() {
         {/* Left Column */}
         <div className="order-2 xl:order-1 xl:col-span-2 flex flex-col gap-4 lg:gap-6">
           <div className="h-[400px]">
-            <TrendChart data={data?.trend} isLoading={isLoading} periodLabel={periodLabel} />
+            <TrendChart data={data?.trend} isLoading={loading} periodLabel={periodLabel} />
           </div>
           <RecentDonations />
         </div>
         
         {/* Right Column */}
         <div className="order-1 xl:order-2 xl:col-span-1 flex flex-col gap-4 lg:gap-6">
-          <FundBreakdown data={data?.fundBreakdown} isLoading={isLoading} />
+          <FundBreakdown data={data?.fundBreakdown} isLoading={loading} />
         </div>
       </div>
     </div>

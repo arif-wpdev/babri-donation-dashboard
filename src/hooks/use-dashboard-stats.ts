@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { DateRange } from "react-day-picker";
 
 export interface DashboardStats {
@@ -38,6 +38,5 @@ export function useDashboardStats(dateRange?: DateRange | null, includeAttributi
     },
     refetchInterval: 5 * 60 * 1000, // 5 mins
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
   });
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useDonors } from "@/hooks/use-donors";
 import { useFunds } from "@/hooks/use-funds";
+import { useDebounce } from "@/hooks/use-debounce";
 import { format, formatDistanceToNow, differenceInHours } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -67,8 +68,9 @@ export default function DonorsDirectoryPage() {
   };
   
   const { data: fundsData } = useFunds({ limit: 100 });
+  const debouncedSearch = useDebounce(search, 500);
   
-  const { data, isLoading } = useDonors({ search, page, limit, minAmount, maxAmount, minCount, maxCount, from, to, sortBy, sortOrder, fundId });
+  const { data, isLoading, isFetching } = useDonors({ search: debouncedSearch, page, limit, minAmount, maxAmount, minCount, maxCount, from, to, sortBy, sortOrder, fundId });
 
   const activeFilterCount = [minAmount, maxAmount, minCount, maxCount, from, to].filter(v => v !== "").length + (fundId !== "all" ? 1 : 0);
 
@@ -461,7 +463,7 @@ export default function DonorsDirectoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {isLoading || isFetching ? (
                   Array.from({ length: limit }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-4 w-[150px]" /></TableCell>

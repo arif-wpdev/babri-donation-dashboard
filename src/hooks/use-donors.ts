@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 interface DonorsParams {
   page?: number;
@@ -42,7 +42,6 @@ export function useDonors(params: DonorsParams = {}) {
     queryKey: ["donors", params],
     queryFn: () => fetchDonors(params),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
   });
 }
 

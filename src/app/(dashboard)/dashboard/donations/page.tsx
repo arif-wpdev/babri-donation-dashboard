@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useDonations } from "@/hooks/use-donations";
 import { useFunds } from "@/hooks/use-funds";
+import { useDebounce } from "@/hooks/use-debounce";
 import { format } from "date-fns";
 import { DateRange } from "react-day-picker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +23,9 @@ export default function TransactionsPage() {
   const [sourceFilter, setSourceFilter] = useState("All");
   const [campaignFilter, setCampaignFilter] = useState("All");
 
-  const { data: donationsData, isLoading: isLoadingDonations } = useDonations({ search, limit: 100 });
+  const debouncedSearch = useDebounce(search, 500);
+
+  const { data: donationsData, isLoading: isLoadingDonations, isFetching } = useDonations({ search: debouncedSearch, limit: 100 });
   const { data: fundsData, isLoading: isLoadingFunds } = useFunds({ limit: 50 });
 
   // Client-side filtering logic
@@ -129,7 +132,7 @@ export default function TransactionsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoadingDonations ? (
+                {isLoadingDonations || isFetching ? (
                   Array.from({ length: 8 }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-4 w-[100px]" /></TableCell>
