@@ -18,6 +18,8 @@ import pdfMake from "pdfmake/build/pdfmake";
 import pdfMakeFonts from "pdfmake/build/vfs_fonts";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
+import { DateRange } from "react-day-picker";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 
 async function loadBengaliPdfFont() {
   const response = await fetch("/fonts/HindSiliguri-Regular.ttf");
@@ -47,6 +49,22 @@ export default function DonorsDirectoryPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [fundId, setFundId] = useState<string | "all">("all");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    if (range?.from) {
+      setFrom(format(range.from, "yyyy-MM-dd"));
+    } else {
+      setFrom("");
+    }
+    if (range?.to) {
+      setTo(format(range.to, "yyyy-MM-dd"));
+    } else {
+      setTo("");
+    }
+    setPage(1);
+  };
   
   const { data: fundsData } = useFunds({ limit: 100 });
   
@@ -269,18 +287,7 @@ export default function DonorsDirectoryPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <label htmlFor="donor-date-from" className="text-xs font-medium">Donation date from</label>
-                        <Input id="donor-date-from" type="date" value={from} max={to || undefined} onChange={(event) => { setFrom(event.target.value); setPage(1); }} />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="donor-date-to" className="text-xs font-medium">Donation date to</label>
-                        <Input id="donor-date-to" type="date" value={to} min={from || undefined} onChange={(event) => { setTo(event.target.value); setPage(1); }} />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Min Amount (৳){from || to ? " in period" : " lifetime"}</span>
+                        <span className="text-xs font-medium">Min Amount (৳)</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -290,7 +297,7 @@ export default function DonorsDirectoryPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Max Amount (৳){from || to ? " in period" : " lifetime"}</span>
+                        <span className="text-xs font-medium">Max Amount (৳)</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -303,7 +310,7 @@ export default function DonorsDirectoryPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Min Donations{from || to ? " in period" : " lifetime"}</span>
+                        <span className="text-xs font-medium">Min Donations</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -313,7 +320,7 @@ export default function DonorsDirectoryPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium">Max Donations{from || to ? " in period" : " lifetime"}</span>
+                        <span className="text-xs font-medium">Max Donations</span>
                         <Input 
                           type="number" 
                           min="0"
@@ -323,6 +330,32 @@ export default function DonorsDirectoryPage() {
                         />
                       </div>
                     </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs font-medium">Donation Date</span>
+                      <DateRangePicker 
+                        date={dateRange} 
+                        setDate={handleDateRangeChange} 
+                        trigger={
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal border-border/50 bg-transparent text-foreground hover:bg-muted/50"
+                          >
+                            {dateRange?.from ? (
+                              dateRange.to ? (
+                                `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                              ) : (
+                                format(dateRange.from, "MMM dd, yyyy")
+                              )
+                            ) : (
+                              <span className="text-muted-foreground">Pick a date range</span>
+                            )}
+                          </Button>
+                        }
+                      />
+                    </div>
+                    
+
 
                     <div className="flex flex-col gap-1.5">
                       <span className="text-xs font-medium">Specific Fund</span>
@@ -345,7 +378,7 @@ export default function DonorsDirectoryPage() {
                       </Select>
                     </div>
 
-                    <div className="flex flex-col gap-2 pt-2 border-t border-border">
+                    <div className="flex flex-col gap-2 pt-4 border-t border-border mt-2">
                       <span className="text-xs font-medium">Sort By</span>
                       <div className="flex gap-2">
                         <Select value={sortBy} onValueChange={(val: any) => { setSortBy(val); setPage(1); }}>
@@ -361,7 +394,7 @@ export default function DonorsDirectoryPage() {
                           </SelectContent>
                         </Select>
                         <Select value={sortOrder} onValueChange={(val: any) => { setSortOrder(val); setPage(1); }}>
-                          <SelectTrigger className="w-24">
+                          <SelectTrigger className="w-[100px]">
                             <SelectValue>
                               {sortOrder === "desc" ? "Desc" : "Asc"}
                             </SelectValue>
@@ -378,12 +411,13 @@ export default function DonorsDirectoryPage() {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="flex-1 text-xs h-8"
+                        className="flex-1 text-xs h-10 border-border/50 hover:bg-muted/50"
                         onClick={() => {
                           setMinAmount("");
                           setMaxAmount("");
                           setMinCount("");
                           setMaxCount("");
+                          setDateRange(undefined);
                           setFrom("");
                           setTo("");
                           setSortBy("lastDonation");
@@ -398,7 +432,7 @@ export default function DonorsDirectoryPage() {
                       <Button 
                         variant="default" 
                         size="sm" 
-                        className="flex-1 text-xs h-8 bg-[#0D472B] hover:bg-[#0a3822] text-white"
+                        className="flex-1 text-xs h-10 bg-[#0D472B] hover:bg-[#0a3822] text-white"
                         onClick={() => {
                           setIsFilterOpen(false);
                         }}

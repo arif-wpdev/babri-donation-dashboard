@@ -99,8 +99,8 @@ export function OrganizationsAdmin({ initialOrganizations }: { initialOrganizati
             <CardDescription>Organization details and Org Admin counts. Super Admin access is cross-organization.</CardDescription>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm"><Plus className="mr-2 size-4" /> Add Org</Button>
+            <DialogTrigger render={<Button size="sm" />}>
+              <Plus className="mr-2 size-4" /> Add Org
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
