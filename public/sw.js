@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tdf-dashboard-cache-v1';
+const CACHE_NAME = 'tdf-dashboard-cache-v2';
 
 // Install event: cache some basic assets if needed, but not strictly required for just installing.
 self.addEventListener('install', (event) => {

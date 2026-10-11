@@ -28,8 +28,8 @@ export const metadata: Metadata = {
   authors: [{ name: "Babri Masjid Donation Dashboard" }],
   robots: { index: false, follow: false }, // Private SaaS — no indexing
   icons: {
-    icon: '/icon-192.png',
-    apple: '/icon-192.png',
+    icon: '/icon-192.png?v=2',
+    apple: '/apple-touch-icon.png?v=2',
   },
   appleWebApp: {
     capable: true,
