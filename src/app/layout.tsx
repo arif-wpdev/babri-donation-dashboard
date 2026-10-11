@@ -27,6 +27,10 @@ export const metadata: Metadata = {
   keywords: ["donations", "nonprofit", "WooCommerce", "analytics", "fundraising"],
   authors: [{ name: "Babri Masjid Donation Dashboard" }],
   robots: { index: false, follow: false }, // Private SaaS — no indexing
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/icon-192.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

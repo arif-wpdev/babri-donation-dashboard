@@ -4,7 +4,20 @@ import { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Fingerprint, Loader2, ShieldCheck } from "lucide-react";
+import { 
+  Eye, 
+  EyeOff, 
+  Fingerprint, 
+  Loader2, 
+  Lock, 
+  Phone, 
+  ShieldCheck, 
+  ArrowRight,
+  ArrowLeft,
+  KeyRound,
+  CheckCircle2,
+  AlertCircle
+} from "lucide-react";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/types";
 import { useRouter } from "next/navigation";
@@ -15,6 +28,8 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>("Processing...");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [step, setStep] = useState<"password" | "otp" | "passkey" | "register-passkey">("password");
   const [otp, setOtp] = useState("");
@@ -41,10 +56,21 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
     const formData = new FormData(e.currentTarget);
     setIsPending(true);
     setErrorMsg(null);
+    setStatusMessage(
+      factor === "biometric"
+        ? "Starting biometric..."
+        : factor === "otp"
+        ? "Sending OTP..."
+        : "Verifying..."
+    );
     const phoneIdentifier = String(formData.get("identifier") || "");
     const passwordValue = String(formData.get("password") || "");
     try {
-      const response = await fetch("/api/auth/mfa/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: phoneIdentifier, password: passwordValue || undefined, ...(factor ? { factor } : {}) }) });
+      const response = await fetch("/api/auth/mfa/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: phoneIdentifier, password: passwordValue || undefined, ...(factor ? { factor } : {}) }),
+      });
       const result = await response.json();
       if (!response.ok && result.next === "legacy-password") throw new Error(result.error || "Invalid sign-in details");
       if (response.ok && result.next === "legacy-password") {
@@ -102,33 +128,39 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
     event.preventDefault();
     setIsPending(true);
     setErrorMsg(null);
+    setStatusMessage("Signing in...");
     const formData = new FormData(event.currentTarget);
     try {
       const { signIn } = await import("next-auth/react");
       const result = await signIn("credentials", { identifier: formData.get("identifier"), password: formData.get("password"), redirect: false });
       if (result?.error) throw new Error("Invalid sign-in details");
-      router.replace(callbackUrl);
-      router.refresh();
+      setIsNavigating(true);
+      setStatusMessage("Redirecting...");
+      window.location.assign(callbackUrl || "/dashboard");
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : "Sign-in failed");
-    } finally {
       setIsPending(false);
     }
   };
 
   const completeLegacyAdminLogin = async (phoneIdentifier: string, passwordValue: string) => {
+    setIsNavigating(true);
+    setStatusMessage("Signing in...");
     const { signIn } = await import("next-auth/react");
     const result = await signIn("credentials", { identifier: phoneIdentifier, password: passwordValue, redirect: false });
-    if (result?.error) throw new Error("Could not finish the existing Org Admin sign-in.");
-    router.replace(callbackUrl);
-    router.refresh();
+    if (result?.error) {
+      setIsNavigating(false);
+      throw new Error("Could not finish the existing Org Admin sign-in.");
+    }
+    setStatusMessage("Redirecting...");
+    window.location.assign(callbackUrl || "/dashboard");
   };
 
   const startFactorLogin = async (factor: "biometric" | "otp") => {
     const form = document.getElementById("login-form") as HTMLFormElement | null;
     if (!form) return;
     if (passwordRequired && !String(new FormData(form).get("password") || "")) {
-      setErrorMsg("Enter your password to continue.");
+      setErrorMsg("Please enter password.");
       document.getElementById("password")?.focus();
       return;
     }
@@ -149,7 +181,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       return;
     }
     event.preventDefault();
-    setErrorMsg("Choose Login with Biometric or Login with OTP to continue.");
+    setErrorMsg("Choose Biometric or OTP.");
   };
 
   const requestOtp = async () => {
@@ -166,22 +198,39 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
   };
 
   const finishLogin = async (loginTicket: string, offerPasskeyRegistration = false) => {
-    const response = await fetch("/api/auth/mfa/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ loginTicket, callbackUrl }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Could not finish sign-in");
-    setOtp("");
-    setErrorMsg(null);
-    if (offerPasskeyRegistration) {
-      setStep("register-passkey");
-      return;
+    setIsNavigating(true);
+    setStatusMessage("Signing in...");
+    try {
+      const response = await fetch("/api/auth/mfa/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loginTicket, callbackUrl }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setIsNavigating(false);
+        throw new Error(result.error || "Could not finish sign-in");
+      }
+      setOtp("");
+      setErrorMsg(null);
+      if (offerPasskeyRegistration) {
+        setIsNavigating(false);
+        setStep("register-passkey");
+        return;
+      }
+      setStatusMessage("Redirecting...");
+      const target = result.redirectTo || callbackUrl || "/dashboard";
+      window.location.assign(target);
+    } catch (err) {
+      setIsNavigating(false);
+      throw err;
     }
-    router.replace(result.redirectTo || "/dashboard");
-    router.refresh();
   };
 
   const authenticatePasskey = async (options?: PublicKeyCredentialRequestOptionsJSON) => {
     setIsPending(true);
     setErrorMsg(null);
+    setStatusMessage("Scanning...");
     try {
       let requestOptions = options ?? passkeyOptions;
       if (!requestOptions) {
@@ -191,7 +240,12 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       }
       if (!requestOptions) throw new Error("Passkey request options are missing");
       const response = await startAuthentication(requestOptions);
-      const verify = await fetch("/api/auth/mfa/passkey/login-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ response }) });
+      setStatusMessage("Verifying...");
+      const verify = await fetch("/api/auth/mfa/passkey/login-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response }),
+      });
       const result = await verify.json();
       if (!verify.ok) throw new Error(result.error || "Passkey verification failed");
       setPasskeyOptions(undefined);
@@ -200,7 +254,6 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       setErrorMsg(error instanceof Error ? error.message : "Passkey verification failed");
       setStep("passkey");
       setPasskeyOptions(undefined);
-    } finally {
       setIsPending(false);
     }
   };
@@ -208,6 +261,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
   const fallbackToOtp = async () => {
     setIsPending(true);
     setErrorMsg(null);
+    setStatusMessage("Switching to OTP...");
     try {
       const response = await fetch("/api/auth/mfa/passkey/fallback", { method: "POST" });
       const result = await response.json();
@@ -235,8 +289,13 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
     event.preventDefault();
     setIsPending(true);
     setErrorMsg(null);
+    setStatusMessage("Verifying OTP...");
     try {
-      const response = await fetch("/api/auth/mfa/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ otp }) });
+      const response = await fetch("/api/auth/mfa/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otp }),
+      });
       const result = await response.json();
       if (!response.ok) {
         if (response.status === 429) setOtpLocked(true);
@@ -246,7 +305,6 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       await finishLogin(result.loginTicket, result.offerPasskeyRegistration === true);
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : "Code verification failed");
-    } finally {
       setIsPending(false);
     }
   };
@@ -254,6 +312,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
   const registerPasskey = async () => {
     setIsPending(true);
     setErrorMsg(null);
+    setStatusMessage("Registering...");
     try {
       let options = registrationOptions;
       if (!options) {
@@ -272,91 +331,333 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Passkey registration failed");
       setRegistrationOptions(undefined);
-      router.replace(callbackUrl);
-      router.refresh();
+      setIsNavigating(true);
+      setStatusMessage("Redirecting...");
+      window.location.assign(callbackUrl || "/dashboard");
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : "Passkey registration failed");
-    } finally {
       setIsPending(false);
     }
   };
 
   return (
     <div className="w-full">
-      <OverlayLoader visible={isPending} message={step === "passkey" ? "Verifying Passkey..." : step === "otp" ? "Verifying Code..." : "Processing..."} />
+      {/* Persistent Overlay Loader that stays visible during redirect to eliminate freeze */}
+      <OverlayLoader 
+        visible={isPending || isNavigating} 
+        message={isNavigating ? statusMessage : statusMessage} 
+      />
+
       {errorMsg && (
-        <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-100 flex items-center justify-center">
-          {errorMsg}
+        <div className="mb-4 bg-red-50 text-red-700 px-4 py-3 rounded-2xl text-xs sm:text-sm border border-red-100 flex items-start gap-2.5 shadow-sm animate-in fade-in duration-200">
+          <AlertCircle className="size-4 shrink-0 text-red-500 mt-0.5" />
+          <div className="flex-1 leading-snug">{errorMsg}</div>
         </div>
       )}
-      {adminSetupRequired && <Link href="/setup/admin" className="mt-2 block text-center text-sm font-medium text-primary underline">Open administrator phone setup</Link>}
-      {step === "password" && mfaEnabled && <div className="mt-2 flex justify-center gap-4 text-sm text-muted-foreground"><Link href="/recover/password" className="underline">Forgot password?</Link><Link href="/recover/account" className="underline">Use recovery code</Link></div>}
 
-      {step === "password" && <form id="login-form" onSubmit={submitPasswordStep} className="flex flex-col gap-4 w-full">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="identifier">Phone number</Label>
-          <Input
-            id="identifier"
-            name="identifier"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="01XXXXXXXXX"
-            required
-            value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
-            className="h-11 rounded-xl bg-background/50"
-          />
+      {adminSetupRequired && (
+        <div className="mb-4 p-3 bg-amber-50 rounded-2xl border border-amber-200/60 text-center">
+          <Link href="/setup/admin" className="text-xs sm:text-sm font-semibold text-emerald-800 hover:underline">
+            Open administrator phone setup →
+          </Link>
         </div>
-        {passwordRequired && <div className="flex flex-col gap-2">
-          <Label htmlFor="password">Password</Label>
-          <div className="relative">
-            <Input
-              id="password"
-              name="password"
-              type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
-              required={passwordRequired}
-              className="h-11 rounded-xl bg-background/50 pr-10"
-            />
+      )}
+
+      {/* STEP 1: Phone & Password Form */}
+      {step === "password" && (
+        <form id="login-form" onSubmit={submitPasswordStep} className="flex flex-col gap-4 w-full">
+          {/* Phone input */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="identifier" className="text-xs font-semibold text-slate-700">
+              Phone number
+            </Label>
+            <div className="relative">
+              <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+              <Input
+                id="identifier"
+                name="identifier"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="01XXXXXXXXX"
+                required
+                value={identifier}
+                onChange={(event) => setIdentifier(event.target.value)}
+                className="h-12 pl-10 rounded-2xl bg-slate-50/70 border-slate-200 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10 transition-all font-medium text-base sm:text-sm shadow-none"
+              />
+            </div>
+          </div>
+
+          {/* Password input */}
+          {passwordRequired && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-xs font-semibold text-slate-700">
+                  Password
+                </Label>
+                <Link 
+                  href="/recover/password" 
+                  className="text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required={passwordRequired}
+                  placeholder="••••••••••••"
+                  className="h-12 pl-10 pr-11 rounded-2xl bg-slate-50/70 border-slate-200 text-slate-900 focus:bg-white focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10 transition-all text-base sm:text-sm shadow-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Primary & Factor Actions */}
+          {mfaEnabled && factorButtonsVisible ? (
+            <div className="flex flex-col gap-3 pt-2">
+              {/* Prominent Biometric Button - Modern Mobile Dribbble Design */}
+              <button
+                type="button"
+                disabled={isPending || isNavigating}
+                onClick={() => void startFactorLogin("biometric")}
+                className="group relative w-full h-[52px] rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white shadow-md shadow-emerald-700/20 transition-all flex items-center justify-center gap-3 px-4 font-semibold text-sm cursor-pointer disabled:opacity-60"
+              >
+                <div className="size-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0 transition-transform group-hover:scale-110">
+                  <Fingerprint className="size-5 text-white" />
+                </div>
+                <div className="flex flex-col text-left leading-tight">
+                  <span className="font-semibold text-white tracking-wide">Login with Biometric</span>
+                  <span className="text-[11px] text-emerald-100/90 font-normal">Touch ID, Face ID or Passkey</span>
+                </div>
+                <ArrowRight className="size-4 text-emerald-200 ml-auto transition-transform group-hover:translate-x-0.5" />
+              </button>
+
+              {/* Minimal Divider */}
+              <div className="relative my-0.5 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-100" />
+                </div>
+                <span className="relative bg-white px-3 text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  or continue with
+                </span>
+              </div>
+
+              {/* Secondary OTP Button */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isPending || isNavigating}
+                onClick={() => void startFactorLogin("otp")}
+                className="w-full h-11 rounded-2xl border-slate-200/90 bg-slate-50/60 hover:bg-slate-100/80 text-slate-700 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.99] shadow-none"
+              >
+                <ShieldCheck className="size-4 text-emerald-700 shrink-0" />
+                <span>Login with OTP (SMS)</span>
+              </Button>
+            </div>
+          ) : (
+            <div className="pt-2">
+              <Button 
+                type="submit" 
+                disabled={isPending || isNavigating} 
+                className="h-12 w-full rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm shadow-md shadow-emerald-800/15 transition-all active:scale-[0.99]"
+              >
+                {isPending || isNavigating ? (
+                  <Loader2 className="mx-auto size-4 animate-spin" />
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    Continue <ArrowRight className="size-4" />
+                  </span>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* Recovery link at the bottom */}
+          <div className="pt-2 text-center">
+            <Link 
+              href="/recover/account" 
+              className="text-xs text-slate-400 hover:text-slate-600 hover:underline transition-colors"
+            >
+              Sign in with a recovery code
+            </Link>
+          </div>
+        </form>
+      )}
+
+      {/* STEP 2: OTP Verification Screen */}
+      {step === "otp" && (
+        <div className="flex w-full flex-col gap-5 animate-in fade-in duration-200">
+          <div className="rounded-2xl bg-emerald-50/70 border border-emerald-100/70 p-3.5 text-xs sm:text-sm text-emerald-950 flex items-start gap-3">
+            <div className="size-7 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+              <ShieldCheck className="size-4 text-emerald-700" />
+            </div>
+            <div className="leading-relaxed">
+              {otpLocked 
+                ? "Verification is temporarily locked. Please use a recovery code or try again later."
+                : "Enter the 6-digit code sent to your registered phone."
+              }
+            </div>
+          </div>
+
+          <form onSubmit={verifyOtp} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="otp" className="text-xs font-semibold text-slate-700 text-center">
+                6-digit verification code
+              </Label>
+              <Input
+                id="otp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                autoFocus
+                value={otp}
+                onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                className="h-14 text-center text-2xl font-mono tracking-[0.45em] font-bold rounded-2xl bg-slate-50 border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10"
+              />
+            </div>
+
+            <p aria-live="polite" className="text-xs text-center text-slate-500">
+              {otpLocked 
+                ? "Temporarily locked" 
+                : `${attemptsRemaining} attempts left · ${resendIn > 0 ? `Resend code in ${resendIn}s` : "Code ready to resend"}`
+              }
+            </p>
+
+            <Button
+              type="submit"
+              disabled={isPending || isNavigating || otpLocked || otp.length !== 6}
+              className="h-12 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm shadow-md shadow-emerald-800/15 transition-all active:scale-[0.99] disabled:opacity-50"
+            >
+              {isPending || isNavigating ? (
+                <Loader2 className="mx-auto size-4 animate-spin" />
+              ) : (
+                "Verify Code & Sign In"
+              )}
+            </Button>
+
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+              disabled={isPending || isNavigating || otpLocked || resendIn > 0}
+              onClick={() => void requestOtp().then(() => setErrorMsg(null)).catch((error) => setErrorMsg(error.message))}
+              className="text-xs text-emerald-700 font-medium hover:underline disabled:text-slate-400 disabled:no-underline transition-colors"
             >
-              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              Resend verification code
+            </button>
+          </form>
+
+          <div className="flex flex-col gap-2 pt-2 text-center">
+            <Link href="/recover/account" className="text-xs text-slate-500 hover:text-emerald-700 hover:underline">
+              Sign in with a recovery code
+            </Link>
+            <button
+              type="button"
+              onClick={() => setStep("password")}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Back to login options
             </button>
           </div>
-        </div>}
-        {mfaEnabled && factorButtonsVisible ? <div className="grid grid-cols-2 gap-3 pt-1">
-          <Button type="button" variant="outline" disabled={isPending} onClick={() => void startFactorLogin("biometric")} className="h-10 gap-2 px-2 text-sm"><Fingerprint className="size-4 shrink-0" />Login with Biometric</Button>
-          <Button type="button" disabled={isPending} onClick={() => void startFactorLogin("otp")} className="h-10 gap-2 px-2 text-sm"><ShieldCheck className="size-4 shrink-0" />Login with OTP</Button>
-        </div> : <button type="submit" disabled={isPending} className="h-11 w-full rounded-xl bg-primary font-medium text-primary-foreground">{isPending ? <Loader2 className="mx-auto size-4 animate-spin" /> : "Continue"}</button>}
-      </form>}
+        </div>
+      )}
 
-      {step === "otp" && <div className="flex w-full flex-col gap-5">
-        <div className="rounded-xl bg-muted/50 p-3 text-sm"><ShieldCheck className="mr-2 inline size-4" />{otpLocked ? "Verification is locked. You can use a single-use recovery code or return later." : "Enter the code sent only to your registered phone."}</div>
-        <form onSubmit={verifyOtp} className="flex flex-col gap-5">
-          <div className="flex flex-col gap-2"><Label htmlFor="otp">6-digit verification code</Label><Input id="otp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} className="h-12 text-center text-xl tracking-[0.4em]" /></div>
-          <p aria-live="polite" className="text-sm text-muted-foreground">{otpLocked ? "Verification is temporarily unavailable. Use a recovery code or try again after the lock period." : `${attemptsRemaining} attempts remaining · ${resendIn > 0 ? `Resend available in ${resendIn}s` : "You can request a new code"}`}</p>
-          <button type="submit" disabled={isPending || otpLocked || otp.length !== 6} className="h-11 rounded-xl bg-primary font-medium text-primary-foreground disabled:opacity-60">{isPending ? <Loader2 className="mx-auto size-4 animate-spin" /> : "Verify OTP and sign in"}</button>
-          <button type="button" disabled={isPending || otpLocked || resendIn > 0} onClick={() => void requestOtp().then(() => setErrorMsg(null)).catch((error) => setErrorMsg(error.message))} className="text-sm text-primary disabled:text-muted-foreground">Resend code</button>
-        </form>
-        <Link href="/recover/account" className="text-center text-sm text-primary underline">Sign in with a recovery code</Link>
-        {superAdminLogin && <p className="text-center text-xs text-muted-foreground">Code sent to your registered phone {registeredPhoneHint}.</p>}
-      </div>}
+      {/* STEP 3: Passkey / Biometrics Screen */}
+      {step === "passkey" && (
+        <div className="flex w-full flex-col gap-4 text-center animate-in fade-in duration-200">
+          <div className="rounded-2xl bg-emerald-50/60 border border-emerald-100/70 p-5 flex flex-col items-center">
+            <div className="size-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-700 mb-3 shadow-inner">
+              <Fingerprint className="size-8" />
+            </div>
+            <h2 className="text-base font-bold text-slate-900">Biometric Verification</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Use your device Touch ID, Face ID, or Passkey to sign in.
+            </p>
+          </div>
 
-      {step === "passkey" && <div className="flex w-full flex-col gap-4 text-center">
-        <div className="rounded-xl bg-muted/50 p-4 text-sm"><Fingerprint className="mx-auto mb-2 size-8 text-primary" />Use your device passkey, fingerprint or Face ID to sign in.</div>
-        <button type="button" disabled={isPending} onClick={() => void authenticatePasskey()} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary font-medium text-primary-foreground disabled:opacity-60"><Fingerprint className="size-4" />{isPending ? "Verifying…" : "Continue with passkey"}</button>
-        {(employeeLogin || superAdminLogin) && <button type="button" disabled={isPending} onClick={() => void fallbackToOtp()} className="text-sm text-primary">Passkey কাজ করছে না? নিবন্ধিত ফোনে OTP নিন</button>}
-        <button type="button" disabled={isPending} onClick={restartPasskeyLogin} className="text-sm text-muted-foreground">Restart sign-in</button>
-      </div>}
-      {step === "register-passkey" && <div className="flex w-full flex-col gap-4 text-center">
-        <div className="rounded-xl bg-muted/50 p-4 text-sm"><Fingerprint className="mx-auto mb-2 size-8 text-primary" />Password ও OTP verification সম্পন্ন। এই device-এ passkey যোগ করুন—biometric তথ্য device-এর বাইরে যাবে না।</div>
-        <button type="button" disabled={isPending} onClick={() => void registerPasskey()} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary font-medium text-primary-foreground disabled:opacity-60"><Fingerprint className="size-4" />{isPending ? "Registering…" : "Register passkey and continue"}</button>
-        <button type="button" disabled={isPending} onClick={() => { router.replace(callbackUrl); router.refresh(); }} className="text-sm text-muted-foreground">Continue without trusting this device</button>
-      </div>}
+          <Button
+            type="button"
+            disabled={isPending || isNavigating}
+            onClick={() => void authenticatePasskey()}
+            className="h-12 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm shadow-md shadow-emerald-800/15 flex items-center justify-center gap-2"
+          >
+            <Fingerprint className="size-4" />
+            <span>{isPending || isNavigating ? "Verifying..." : "Continue with Biometric"}</span>
+          </Button>
+
+          {(employeeLogin || superAdminLogin) && (
+            <button
+              type="button"
+              disabled={isPending || isNavigating}
+              onClick={() => void fallbackToOtp()}
+              className="text-xs text-emerald-700 font-medium hover:underline"
+            >
+              Passkey not working? Use OTP instead
+            </button>
+          )}
+
+          <button
+            type="button"
+            disabled={isPending || isNavigating}
+            onClick={restartPasskeyLogin}
+            className="text-xs text-slate-400 hover:text-slate-600 pt-1"
+          >
+            ← Back to start
+          </button>
+        </div>
+      )}
+
+      {/* STEP 4: Register Passkey Screen */}
+      {step === "register-passkey" && (
+        <div className="flex w-full flex-col gap-4 text-center animate-in fade-in duration-200">
+          <div className="rounded-2xl bg-emerald-50/70 border border-emerald-100/70 p-5 flex flex-col items-center">
+            <div className="size-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-700 mb-3">
+              <CheckCircle2 className="size-8" />
+            </div>
+            <h2 className="text-base font-bold text-slate-900">Sign-in Verified</h2>
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+              Enable biometric sign-in on this device for one-tap instant access in the future.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            disabled={isPending || isNavigating}
+            onClick={() => void registerPasskey()}
+            className="h-12 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm shadow-md shadow-emerald-800/15 flex items-center justify-center gap-2"
+          >
+            <Fingerprint className="size-4" />
+            <span>{isPending || isNavigating ? "Setting up..." : "Enable Biometric on this Device"}</span>
+          </Button>
+
+          <button
+            type="button"
+            disabled={isPending || isNavigating}
+            onClick={() => {
+              setIsNavigating(true);
+              setStatusMessage("Redirecting...");
+              window.location.assign(callbackUrl || "/dashboard");
+            }}
+            className="text-xs text-slate-400 hover:text-slate-600 pt-1"
+          >
+            Skip for now & go to dashboard →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
+
