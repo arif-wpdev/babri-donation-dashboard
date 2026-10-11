@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { ExitPrompt } from "@/components/pwa/exit-prompt";
+import { TopProgressBar } from "@/components/layout/top-progress-bar";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -57,6 +58,7 @@ export default function RootLayout({
       className={cn("h-full", "antialiased", inter.variable, "font-sans", geist.variable)}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <TopProgressBar />
         <ServiceWorkerRegister />
         <InstallPrompt />
         <ExitPrompt />

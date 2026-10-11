@@ -17,6 +17,7 @@ import { Wallet } from "lucide-react";
 import Link from "next/link";
 import { useAdSpend } from "@/hooks/use-ad-spend";
 import { Button } from "@/components/ui/button";
+import { triggerNavProgress } from "@/components/layout/top-progress-bar";
 
 declare global {
   interface WindowEventMap {
@@ -127,13 +128,22 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
               </div>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/dashboard/settings/security")} className="cursor-pointer">
+            <DropdownMenuItem 
+              onClick={() => {
+                triggerNavProgress();
+                router.push("/dashboard/settings/security");
+              }} 
+              className="cursor-pointer"
+            >
               <ShieldCheck className="mr-2 h-4 w-4" /><span>Security & devices</span>
             </DropdownMenuItem>
             {(user?.role === "SUPER_ADMIN" || user?.role === "ORG_ADMIN") && (
               <DropdownMenuItem
-                className="cursor-pointer"
-                onClick={() => router.push(user.role === "SUPER_ADMIN" ? "/admin/organizations" : "/admin")}
+                className="cursor-pointer font-medium"
+                onClick={() => {
+                  triggerNavProgress();
+                  router.push(user.role === "SUPER_ADMIN" ? "/admin/organizations" : "/admin");
+                }}
               >
                 <UserRoundCog className="mr-2 h-4 w-4 text-primary" />
                 <span>Admin page</span>
