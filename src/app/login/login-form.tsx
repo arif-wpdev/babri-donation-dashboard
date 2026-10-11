@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { 
   Eye, 
   EyeOff, 
@@ -26,12 +27,15 @@ import { OverlayLoader } from "@/components/ui/overlay-loader";
 
 export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { callbackUrl: string; mfaEnabled: boolean; invitedPhone?: string }) {
   const router = useRouter();
+  const isNavigatingRef = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>("Processing...");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [step, setStep] = useState<"password" | "otp" | "passkey" | "register-passkey">("password");
+  const [step, setStep] = useState<"password" | "otp" | "register-passkey">("password");
+  const [biometricFailed, setBiometricFailed] = useState(false);
+  const [biometricErrorText, setBiometricErrorText] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
   const [attemptsRemaining, setAttemptsRemaining] = useState(3);
   const [resendIn, setResendIn] = useState(0);
@@ -56,6 +60,10 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
     const formData = new FormData(e.currentTarget);
     setIsPending(true);
     setErrorMsg(null);
+    if (factor === "biometric") {
+      setBiometricFailed(false);
+      setBiometricErrorText(null);
+    }
     setStatusMessage(
       factor === "biometric"
         ? "Starting biometric..."
@@ -78,7 +86,9 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
         return;
       }
       if (response.status === 409 && factor === "biometric") {
-        setErrorMsg(result.error || "Biometric sign-in is unavailable on this device. Choose OTP.");
+        setBiometricFailed(true);
+        setBiometricErrorText(result.error || "Biometric sign-in is not registered on this device.");
+        setIsPending(false);
         return;
       }
       if (response.status === 409 && typeof result.error === "string" && result.error.includes("/setup/admin")) {
@@ -104,8 +114,8 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       setRegisteredPhoneHint(typeof result.identifier === "string" ? result.identifier : "");
       if (result.next === "passkey") {
         setPasskeyOptions(result.options);
-        setStep("passkey");
-        void authenticatePasskey(result.options);
+        // Instant biometric prompt inline without navigating to another screen
+        await authenticatePasskey(result.options);
       } else {
         setPasskeyOptions(undefined);
         setStep("otp");
@@ -118,9 +128,16 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
         }
       }
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Sign-in failed");
+      if (factor === "biometric") {
+        setBiometricFailed(true);
+        setBiometricErrorText(error instanceof Error ? error.message : "Biometric sign-in failed.");
+      } else {
+        setErrorMsg(error instanceof Error ? error.message : "Sign-in failed");
+      }
     } finally {
-      setIsPending(false);
+      if (!isNavigatingRef.current) {
+        setIsPending(false);
+      }
     }
   };
 
@@ -134,21 +151,25 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       const { signIn } = await import("next-auth/react");
       const result = await signIn("credentials", { identifier: formData.get("identifier"), password: formData.get("password"), redirect: false });
       if (result?.error) throw new Error("Invalid sign-in details");
+      isNavigatingRef.current = true;
       setIsNavigating(true);
       setStatusMessage("Redirecting...");
       window.location.assign(callbackUrl || "/dashboard");
     } catch (error) {
+      isNavigatingRef.current = false;
       setErrorMsg(error instanceof Error ? error.message : "Sign-in failed");
       setIsPending(false);
     }
   };
 
   const completeLegacyAdminLogin = async (phoneIdentifier: string, passwordValue: string) => {
+    isNavigatingRef.current = true;
     setIsNavigating(true);
     setStatusMessage("Signing in...");
     const { signIn } = await import("next-auth/react");
     const result = await signIn("credentials", { identifier: phoneIdentifier, password: passwordValue, redirect: false });
     if (result?.error) {
+      isNavigatingRef.current = false;
       setIsNavigating(false);
       throw new Error("Could not finish the existing Org Admin sign-in.");
     }
@@ -198,6 +219,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
   };
 
   const finishLogin = async (loginTicket: string, offerPasskeyRegistration = false) => {
+    isNavigatingRef.current = true;
     setIsNavigating(true);
     setStatusMessage("Signing in...");
     try {
@@ -208,12 +230,14 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       });
       const result = await response.json();
       if (!response.ok) {
+        isNavigatingRef.current = false;
         setIsNavigating(false);
         throw new Error(result.error || "Could not finish sign-in");
       }
       setOtp("");
       setErrorMsg(null);
       if (offerPasskeyRegistration) {
+        isNavigatingRef.current = false;
         setIsNavigating(false);
         setStep("register-passkey");
         return;
@@ -222,6 +246,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       const target = result.redirectTo || callbackUrl || "/dashboard";
       window.location.assign(target);
     } catch (err) {
+      isNavigatingRef.current = false;
       setIsNavigating(false);
       throw err;
     }
@@ -229,7 +254,6 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
 
   const authenticatePasskey = async (options?: PublicKeyCredentialRequestOptionsJSON) => {
     setIsPending(true);
-    setErrorMsg(null);
     setStatusMessage("Scanning...");
     try {
       let requestOptions = options ?? passkeyOptions;
@@ -249,40 +273,30 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       const result = await verify.json();
       if (!verify.ok) throw new Error(result.error || "Passkey verification failed");
       setPasskeyOptions(undefined);
+      setBiometricFailed(false);
+      setBiometricErrorText(null);
       await finishLogin(result.loginTicket);
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Passkey verification failed");
-      setStep("passkey");
       setPasskeyOptions(undefined);
-      setIsPending(false);
+      if (!isNavigatingRef.current) {
+        setIsPending(false);
+      }
+      setBiometricFailed(true);
+      const isCancellation = 
+        error instanceof Error && 
+        (error.name === "NotAllowedError" || error.name === "AbortError" || error.message.toLowerCase().includes("cancel"));
+      const isExpired = 
+        error instanceof Error && 
+        (error.message.toLowerCase().includes("expired") || error.name === "TimeoutError");
+      
+      if (isCancellation) {
+        setBiometricErrorText("Biometric verification was cancelled.");
+      } else if (isExpired) {
+        setBiometricErrorText("Passkey request expired.");
+      } else {
+        setBiometricErrorText(error instanceof Error ? error.message : "Biometric verification failed.");
+      }
     }
-  };
-
-  const fallbackToOtp = async () => {
-    setIsPending(true);
-    setErrorMsg(null);
-    setStatusMessage("Switching to OTP...");
-    try {
-      const response = await fetch("/api/auth/mfa/passkey/fallback", { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "OTP fallback could not be started");
-      setPasskeyOptions(undefined);
-      setStep("otp");
-      await requestOtp();
-    } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "OTP fallback could not be started");
-    } finally {
-      setIsPending(false);
-    }
-  };
-
-  const restartPasskeyLogin = () => {
-    setStep("password");
-    setPasskeyOptions(undefined);
-    setEmployeeLogin(false);
-    setSuperAdminLogin(false);
-    setFactorButtonsVisible(false);
-    setPasswordRequired(false);
   };
 
   const verifyOtp = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -382,7 +396,11 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
                 placeholder="01XXXXXXXXX"
                 required
                 value={identifier}
-                onChange={(event) => setIdentifier(event.target.value)}
+                onChange={(event) => {
+                  setIdentifier(event.target.value);
+                  setBiometricFailed(false);
+                  setBiometricErrorText(null);
+                }}
                 className="h-12 pl-10 rounded-2xl bg-slate-50/70 border-slate-200 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10 transition-all font-medium text-base sm:text-sm shadow-none"
               />
             </div>
@@ -428,7 +446,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
           {/* Primary & Factor Actions */}
           {mfaEnabled && factorButtonsVisible ? (
             <div className="flex flex-col gap-3 pt-2">
-              {/* Prominent Biometric Button - Modern Mobile Dribbble Design */}
+              {/* Prominent Biometric Button */}
               <button
                 type="button"
                 disabled={isPending || isNavigating}
@@ -445,26 +463,49 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
                 <ArrowRight className="size-4 text-emerald-200 ml-auto transition-transform group-hover:translate-x-0.5" />
               </button>
 
-              {/* Minimal Divider */}
-              <div className="relative my-0.5 flex items-center justify-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-100" />
+              {/* Prompt to use OTP if Biometric failed or cancelled */}
+              {biometricFailed && (
+                <div className="rounded-2xl bg-amber-50/90 border border-amber-200/80 p-3.5 flex items-start gap-2.5 text-amber-900 shadow-sm animate-in fade-in duration-200">
+                  <AlertCircle className="size-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 text-xs leading-snug">
+                    <p className="font-semibold text-amber-950">
+                      {biometricErrorText || "Biometric verification was not completed."}
+                    </p>
+                    <p className="text-amber-800/90 mt-0.5 font-medium">
+                      Please sign in with OTP (SMS) below:
+                    </p>
+                  </div>
                 </div>
-                <span className="relative bg-white px-3 text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                  or continue with
-                </span>
-              </div>
+              )}
 
-              {/* Secondary OTP Button */}
+              {/* Minimal Divider (only shown when not in failed state) */}
+              {!biometricFailed && (
+                <div className="relative my-0.5 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-100" />
+                  </div>
+                  <span className="relative bg-white px-3 text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                    or continue with
+                  </span>
+                </div>
+              )}
+
+              {/* Secondary OTP Button - Highlighted if Biometric failed */}
               <Button
                 type="button"
-                variant="outline"
+                variant={biometricFailed ? "default" : "outline"}
                 disabled={isPending || isNavigating}
                 onClick={() => void startFactorLogin("otp")}
-                className="w-full h-11 rounded-2xl border-slate-200/90 bg-slate-50/60 hover:bg-slate-100/80 text-slate-700 font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.99] shadow-none"
+                className={cn(
+                  "w-full h-11 rounded-2xl font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.99]",
+                  biometricFailed
+                    ? "bg-emerald-700 hover:bg-emerald-800 text-white shadow-md shadow-emerald-800/20 border-transparent font-semibold"
+                    : "border-slate-200/90 bg-slate-50/60 hover:bg-slate-100/80 text-slate-700 shadow-none"
+                )}
               >
-                <ShieldCheck className="size-4 text-emerald-700 shrink-0" />
+                <ShieldCheck className={cn("size-4 shrink-0", biometricFailed ? "text-white" : "text-emerald-700")} />
                 <span>Login with OTP (SMS)</span>
+                {biometricFailed && <ArrowRight className="size-4 ml-0.5" />}
               </Button>
             </div>
           ) : (
@@ -566,57 +607,16 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
             </Link>
             <button
               type="button"
-              onClick={() => setStep("password")}
+              onClick={() => {
+                setStep("password");
+                setBiometricFailed(false);
+                setBiometricErrorText(null);
+              }}
               className="text-xs text-slate-400 hover:text-slate-600"
             >
               Back to login options
             </button>
           </div>
-        </div>
-      )}
-
-      {/* STEP 3: Passkey / Biometrics Screen */}
-      {step === "passkey" && (
-        <div className="flex w-full flex-col gap-4 text-center animate-in fade-in duration-200">
-          <div className="rounded-2xl bg-emerald-50/60 border border-emerald-100/70 p-5 flex flex-col items-center">
-            <div className="size-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-700 mb-3 shadow-inner">
-              <Fingerprint className="size-8" />
-            </div>
-            <h2 className="text-base font-bold text-slate-900">Biometric Verification</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Use your device Touch ID, Face ID, or Passkey to sign in.
-            </p>
-          </div>
-
-          <Button
-            type="button"
-            disabled={isPending || isNavigating}
-            onClick={() => void authenticatePasskey()}
-            className="h-12 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm shadow-md shadow-emerald-800/15 flex items-center justify-center gap-2"
-          >
-            <Fingerprint className="size-4" />
-            <span>{isPending || isNavigating ? "Verifying..." : "Continue with Biometric"}</span>
-          </Button>
-
-          {(employeeLogin || superAdminLogin) && (
-            <button
-              type="button"
-              disabled={isPending || isNavigating}
-              onClick={() => void fallbackToOtp()}
-              className="text-xs text-emerald-700 font-medium hover:underline"
-            >
-              Passkey not working? Use OTP instead
-            </button>
-          )}
-
-          <button
-            type="button"
-            disabled={isPending || isNavigating}
-            onClick={restartPasskeyLogin}
-            className="text-xs text-slate-400 hover:text-slate-600 pt-1"
-          >
-            ← Back to start
-          </button>
         </div>
       )}
 
