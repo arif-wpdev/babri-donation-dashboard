@@ -21,15 +21,15 @@ export async function POST(request: Request) {
     if (!activeCredential || trustedDevice.revokedAt || trustedDevice.credential.revokedAt) return Response.json({ error: "This passkey is no longer available. Use OTP fallback." }, { status: 403 });
     const options = await generateAuthenticationOptions({
       rpID,
-      timeout: 60_000,
+      timeout: 120_000,
       userVerification: "required",
       allowCredentials: [{ id: Buffer.from(trustedDevice.credential.credentialId, "base64url"), type: "public-key", transports: trustedDevice.credential.transports as AuthenticatorTransport[] }],
     });
     const challengeKey = hashAuthValue(preAuth.preAuth.tokenHash, "passkey-auth");
     await prisma.authChallenge.upsert({
       where: { identifierHash_type: { identifierHash: challengeKey, type: "PASSKEY_AUTHENTICATION" } },
-      create: { userId: preAuth.user.id, identifierHash: challengeKey, purpose: trustedDevice.credentialId, type: "PASSKEY_AUTHENTICATION", challenge: options.challenge, otpExpiresAt: new Date(Date.now() + 60_000), ipHash: hashAuthValue(requestIp(request.headers), "ip") },
-      update: { userId: preAuth.user.id, purpose: trustedDevice.credentialId, challenge: options.challenge, otpExpiresAt: new Date(Date.now() + 60_000), consumedAt: null, ipHash: hashAuthValue(requestIp(request.headers), "ip") },
+      create: { userId: preAuth.user.id, identifierHash: challengeKey, purpose: trustedDevice.credentialId, type: "PASSKEY_AUTHENTICATION", challenge: options.challenge, otpExpiresAt: new Date(Date.now() + 120_000), ipHash: hashAuthValue(requestIp(request.headers), "ip") },
+      update: { userId: preAuth.user.id, purpose: trustedDevice.credentialId, challenge: options.challenge, otpExpiresAt: new Date(Date.now() + 120_000), consumedAt: null, ipHash: hashAuthValue(requestIp(request.headers), "ip") },
     });
     return Response.json(options);
   } catch {

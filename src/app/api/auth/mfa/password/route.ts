@@ -111,14 +111,29 @@ export async function POST(request: Request) {
       const { rpID } = webAuthnConfiguration(request);
       const options = await generateAuthenticationOptions({
         rpID,
-        timeout: 60_000,
+        timeout: 120_000,
         userVerification: "required",
         allowCredentials: [{ id: Buffer.from(trustedDevice.credential.credentialId, "base64url"), type: "public-key", transports: trustedDevice.credential.transports as AuthenticatorTransport[] }],
       });
       await prisma.authChallenge.upsert({
         where: { identifierHash_type: { identifierHash: hashAuthValue(preAuth.tokenHash, "passkey-auth"), type: "PASSKEY_AUTHENTICATION" } },
-        create: { userId: user.id, identifierHash: hashAuthValue(preAuth.tokenHash, "passkey-auth"), type: "PASSKEY_AUTHENTICATION", challenge: options.challenge, otpExpiresAt: new Date(Date.now() + 60_000), ipHash },
-        update: { userId: user.id, challenge: options.challenge, otpExpiresAt: new Date(Date.now() + 60_000), consumedAt: null, ipHash },
+        create: {
+          userId: user.id,
+          identifierHash: hashAuthValue(preAuth.tokenHash, "passkey-auth"),
+          type: "PASSKEY_AUTHENTICATION",
+          purpose: trustedDevice.credentialId,
+          challenge: options.challenge,
+          otpExpiresAt: new Date(Date.now() + 120_000),
+          ipHash,
+        },
+        update: {
+          userId: user.id,
+          purpose: trustedDevice.credentialId,
+          challenge: options.challenge,
+          otpExpiresAt: new Date(Date.now() + 120_000),
+          consumedAt: null,
+          ipHash,
+        },
       });
       const needsPasswordlessMigration = user.role === "ORG_ADMIN" && isMfaConfigurationReady() && canMigrateOrgAdminToPasswordless({ role: user.role, passwordHash: user.passwordHash, phoneVerifiedAt: user.phoneVerifiedAt, organizationActive, hasActivePasskey: user.webAuthnCredentials.length > 0, suppliedPasswordValid: requiresPassword, authenticationReady: isMfaConfigurationReady() });
       return Response.json({ success: true, next: "passkey", options, identifier: `••••${identifier.slice(-4)}`, channel: destination.channel, employee: isPhoneOnlyAccount, role: user.role, needsPasswordlessMigration });
