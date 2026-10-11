@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, LogOut, ShieldCheck } from "lucide-react";
+import { Download, LogOut, ShieldCheck, UserRoundCog } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -123,9 +123,18 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
               </div>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/dashboard/settings/security")}>
+            <DropdownMenuItem onClick={() => router.push("/dashboard/settings/security")} className="cursor-pointer">
               <ShieldCheck className="mr-2 h-4 w-4" /><span>Security & devices</span>
             </DropdownMenuItem>
+            {(user?.role === "SUPER_ADMIN" || user?.role === "ORG_ADMIN") && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => router.push(user.role === "SUPER_ADMIN" ? "/admin/organizations" : "/admin")}
+              >
+                <UserRoundCog className="mr-2 h-4 w-4 text-primary" />
+                <span>Admin page</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
               onClick={async () => {
