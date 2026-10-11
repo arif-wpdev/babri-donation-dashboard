@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Target, Users } from "lucide-react";
+import { LayoutDashboard, Target, Users, UserRoundCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const bottomNavItems = [
+const baseNavItems = [
   {
     title: "Funds",
     url: "/dashboard/funds",
@@ -23,17 +23,30 @@ const bottomNavItems = [
   },
 ];
 
-export function BottomNav() {
+export function BottomNav({ userRole }: { userRole?: string }) {
   const pathname = usePathname();
+
+  const navItems = [
+    ...baseNavItems,
+    ...(userRole === "SUPER_ADMIN" || userRole === "ORG_ADMIN"
+      ? [
+          {
+            title: "Admin",
+            url: userRole === "SUPER_ADMIN" ? "/admin/organizations" : "/admin",
+            icon: UserRoundCog,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div className="md:hidden fixed bottom-6 left-6 right-6 z-50 bg-primary/80 backdrop-blur-[6px] backdrop-saturate-150 shadow-[0_8px_30px_rgb(13,71,43,0.3)] rounded-3xl supports-[backdrop-filter]:bg-primary/80">
       <nav className="flex justify-around items-center h-[72px] px-2">
-        {bottomNavItems.map((item) => {
+        {navItems.map((item) => {
           // Check if it's the exact path for dashboard, or starts with it for other routes
           const isActive = item.url === "/dashboard" 
             ? pathname === "/dashboard" 
-            : pathname.startsWith(item.url);
+            : pathname.startsWith(item.url) || (item.title === "Admin" && pathname.startsWith("/admin"));
 
           return (
             <Link

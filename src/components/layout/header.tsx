@@ -48,6 +48,10 @@ export function Header({ user }: { user?: { name?: string | null, email?: string
   else if (title === "donations") displayTitle = "Transactions";
   else if (title === "reports") displayTitle = "UTM Analytics";
   else if (title === "team") displayTitle = "Team Management";
+  else if (title === "admin") displayTitle = "Admin Workspace";
+  else if (title === "organizations") displayTitle = "Organizations";
+  else if (title === "accounts") displayTitle = "Admin Accounts";
+  else if (title === "security" && pathSegments[0] === "admin") displayTitle = "Admin Security";
   // Compact date to reduce header clutter.
   const today = new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
