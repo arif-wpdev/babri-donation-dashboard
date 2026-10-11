@@ -12,11 +12,16 @@ export async function POST(request: Request) {
     if (!isMfaConfigurationReady()) return Response.json({ error: "Verification is temporarily unavailable." }, { status: 503 });
     const preAuth = await getPreAuthUser();
     if (!preAuth) return Response.json({ error: "Sign-in attempt expired. Enter your password again." }, { status: 401 });
-    const organization = preAuth.user.orgId ? await prisma.organization.findUnique({ where: { id: preAuth.user.orgId }, select: { deletedAt: true } }) : null;
+    const identifierHash = hashAuthValue(preAuth.user.id, "otp-identity");
+    const [organization, account, challenge] = await Promise.all([
+      preAuth.user.orgId ? prisma.organization.findUnique({ where: { id: preAuth.user.orgId }, select: { deletedAt: true } }) : Promise.resolve(null),
+      preAuth.preAuth.passkeyOnly ? prisma.user.findUnique({ where: { id: preAuth.user.id }, select: { passwordHash: true } }) : Promise.resolve(null),
+      prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "OTP" } } }),
+    ]);
+
     const organizationActive = preAuth.user.role === "SUPER_ADMIN" || (Boolean(preAuth.user.orgId) && Boolean(organization) && !organization?.deletedAt);
     if (!organizationActive) return Response.json({ error: "Sign-in attempt expired. Restart sign-in." }, { status: 401 });
     if (preAuth.preAuth.passkeyOnly) {
-      const account = await prisma.user.findUnique({ where: { id: preAuth.user.id }, select: { passwordHash: true } });
       if (!canEmployeeFallbackToOtp({ role: preAuth.user.role, passwordlessAccount: account?.passwordHash === null, phoneVerifiedAt: preAuth.user.phoneVerifiedAt, organizationActive, preAuthPasskeyOnly: true, deliveryChannel: preAuth.preAuth.deliveryChannel })) {
         return Response.json({ error: "This trusted device requires its registered passkey." }, { status: 403 });
       }
@@ -34,9 +39,7 @@ export async function POST(request: Request) {
     ]);
     if (!rate.allowed) return Response.json({ error: "Verification is temporarily unavailable. Try again later." }, { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } });
 
-    const identifierHash = hashAuthValue(preAuth.user.id, "otp-identity");
     const now = new Date();
-    const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "OTP" } } });
     if (!challenge || (challenge.lockedUntil && challenge.lockedUntil > now) || challenge.failedAttempts >= MAX_ATTEMPTS) {
       return Response.json({ error: "Verification is temporarily unavailable. Try again later." }, { status: 429 });
     }
@@ -56,7 +59,7 @@ export async function POST(request: Request) {
         const lockedUntil = failure.lockedUntil ?? undefined;
         const updated = await tx.authChallenge.updateMany({ where: { id: current.id, userId: preAuth.user.id, failedAttempts: current.failedAttempts, otpHash: activeOtpHash, consumedAt: null, lockedUntil: current.lockedUntil }, data: { failedAttempts, ...(lockedUntil && { lockedUntil, otpHash: null, loginTicketHash: null, loginTicketExpiresAt: null }) } });
         return updated.count === 1 ? { failedAttempts, lockedUntil } : null;
-      }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
+      }, { maxWait: 3_000, timeout: 5_000 });
       if (!failedResult) return Response.json({ error: "Verification state changed. Try the current code again." }, { status: 409 });
       if (failedResult.failedAttempts >= MAX_ATTEMPTS) {
         const lockedUntil = failedResult.lockedUntil ?? new Date(now.getTime() + LOCK_MS);
@@ -84,7 +87,7 @@ export async function POST(request: Request) {
       if (preAuthConsumed.count !== 1) throw new Error("Pre-authentication state already consumed");
       await tx.loginTicket.create({ data: { userId: preAuth.user.id, preauthId: preAuth.preAuth.id, tokenHash: ticketHash, expiresAt: new Date(now.getTime() + 2 * 60_000) } });
       return true;
-    }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
+    }, { maxWait: 3_000, timeout: 5_000 });
     if (!consumed) return Response.json({ error: "This code has already been used. Request a new code." }, { status: 409 });
     const hasActivePasskey = await prisma.webAuthnCredential.findFirst({ where: { userId: preAuth.user.id, revokedAt: null }, select: { id: true } });
     const offerPasskeyRegistration = preAuth.user.role === "ORG_USER" || (prefersMobileAuthFlow(request.headers) && !hasActivePasskey);

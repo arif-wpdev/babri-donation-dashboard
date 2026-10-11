@@ -80,7 +80,12 @@ export async function POST(request: Request) {
     if ((parsed.data.factor == null || parsed.data.factor === "recovery") && !isOtpDeliveryReady("sms")) return Response.json({ error: "Sign-in is temporarily unavailable. Contact an administrator." }, { status: 503 });
     if (!destination || (parsed.data.factor === "otp" && !isOtpDeliveryReady(destination.channel))) return Response.json({ error: "Phone verification is temporarily unavailable. Contact an administrator." }, { status: 503 });
 
-    const trustedDevice = await getTrustedDeviceCredentialForLogin(user.id);
+    const identifierHash = hashAuthValue(user.id, "otp-identity");
+    const [trustedDevice, otpLock] = await Promise.all([
+      getTrustedDeviceCredentialForLogin(user.id),
+      prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "OTP" } }, select: { lockedUntil: true } }),
+    ]);
+
     if (parsed.data.factor == null) {
       await clearPreAuth();
       return Response.json({ success: true, next: "choose-factor", role: user.role, employee: isPhoneOnlyAccount });
@@ -94,8 +99,6 @@ export async function POST(request: Request) {
     const selectedFactor = chooseLoginFactor({ factor: requestedFactor, role: user.role, phoneVerifiedAt: user.phoneVerifiedAt, organizationActive, hasTrustedActivePasskey: Boolean(trustedDevice), mobile: prefersMobileAuthFlow(request.headers) });
     if (!selectedFactor) return Response.json({ error: requestedFactor === "biometric" ? "Biometric sign-in is only available on this phone after a passkey is registered. Choose OTP instead." : "Sign-in is unavailable for this account." }, { status: 409 });
     const usePasskey = selectedFactor === "passkey";
-    const identifierHash = hashAuthValue(user.id, "otp-identity");
-    const otpLock = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash, type: "OTP" } }, select: { lockedUntil: true } });
     if (otpLock?.lockedUntil && otpLock.lockedUntil > new Date() && !usePasskey) {
       return Response.json({ error: "Verification is temporarily unavailable. Try again later." }, { status: 429, headers: { "Retry-After": String(Math.ceil((otpLock.lockedUntil.getTime() - Date.now()) / 1000)) } });
     }

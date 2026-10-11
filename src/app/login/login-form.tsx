@@ -51,9 +51,10 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
   const [adminSetupRequired, setAdminSetupRequired] = useState(false);
 
   useEffect(() => {
+    router.prefetch("/dashboard");
     const timer = window.setInterval(() => setResendIn((seconds) => Math.max(0, seconds - 1)), 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [router]);
 
   const handlePassword = async (e: React.FormEvent<HTMLFormElement>, factor: "biometric" | "otp" | null = null) => {
     e.preventDefault();
@@ -154,7 +155,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       isNavigatingRef.current = true;
       setIsNavigating(true);
       setStatusMessage("Redirecting...");
-      window.location.assign(callbackUrl || "/dashboard");
+      window.location.replace(callbackUrl || "/dashboard");
     } catch (error) {
       isNavigatingRef.current = false;
       setErrorMsg(error instanceof Error ? error.message : "Sign-in failed");
@@ -174,7 +175,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       throw new Error("Could not finish the existing Org Admin sign-in.");
     }
     setStatusMessage("Redirecting...");
-    window.location.assign(callbackUrl || "/dashboard");
+    window.location.replace(callbackUrl || "/dashboard");
   };
 
   const startFactorLogin = async (factor: "biometric" | "otp") => {
@@ -244,7 +245,7 @@ export function LoginForm({ callbackUrl, mfaEnabled, invitedPhone = "" }: { call
       }
       setStatusMessage("Redirecting...");
       const target = result.redirectTo || callbackUrl || "/dashboard";
-      window.location.assign(target);
+      window.location.replace(target);
     } catch (err) {
       isNavigatingRef.current = false;
       setIsNavigating(false);

@@ -80,9 +80,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const tokenHash = createHash("sha256").update(ticketValue.data).digest("hex");
           const ticket = await prisma.loginTicket.findUnique({ where: { tokenHash } });
           if (!ticket || ticket.expiresAt <= new Date() || ticket.consumedAt) return null;
-          const user = await prisma.user.findUnique({ where: { id: ticket.userId }, include: { org: { select: { id: true, slug: true, deletedAt: true } } } });
+          const [user, preAuth] = await Promise.all([
+            prisma.user.findUnique({ where: { id: ticket.userId }, include: { org: { select: { id: true, slug: true, deletedAt: true } } } }),
+            ticket.preauthId ? prisma.loginPreAuth.findUnique({ where: { id: ticket.preauthId } }) : Promise.resolve(null),
+          ]);
           if (!user || !canAuthenticateAccount({ role: user.role, disabledAt: user.disabledAt, organizationActive: !user.org?.deletedAt })) return null;
-          const preAuth = ticket.preauthId ? await prisma.loginPreAuth.findUnique({ where: { id: ticket.preauthId } }) : null;
           if (!preAuth || preAuth.userId !== user.id || preAuth.expiresAt <= new Date() || !preAuth.consumedAt) return null;
           const isEmployeeEnrollment = preAuth.deliveryChannel === "employee-enrollment" && preAuth.passkeyOnly && user.role === "ORG_USER";
           const isAdminEnrollment = preAuth.deliveryChannel === "employee-enrollment" && preAuth.passkeyOnly && user.role === "ORG_ADMIN";
@@ -118,7 +120,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             if (consumed.count !== 1) return null;
             const mobileLockEnabled = user.role === "ORG_USER" && /android|iphone|ipod|ipad|mobile/i.test((await headers()).get("user-agent") ?? "");
             return tx.authSession.create({ data: { userId: user.id, expiresAt: new Date(handoffAt.getTime() + 8 * 60 * 60 * 1000), mobileLockEnabled } });
-          }, { isolationLevel: "Serializable", maxWait: 5_000, timeout: 10_000 });
+          }, { maxWait: 5_000, timeout: 10_000 });
           if (!authSession) return null;
           await writeSecurityEvent({ userId: user.id, eventType: "LOGIN_SUCCESS", details: { method: "mfa" } });
           return { id: user.id, name: user.name, email: user.email, image: user.image, role: user.role, orgId: user.org?.id ?? null, orgSlug: user.org?.slug ?? null, authSessionId: authSession.id, mfaVerifiedAt: Date.now() };

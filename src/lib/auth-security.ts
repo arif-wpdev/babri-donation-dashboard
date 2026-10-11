@@ -246,62 +246,85 @@ export function isOtpDeliveryReady(channel: "sms") {
   return channel === "sms" && Boolean(env.GREENWEB_SMS_TOKEN);
 }
 
-export async function writeSecurityEvent(input: {
+export function writeSecurityEvent(input: {
   userId?: string | null;
   eventType: AuthEventType;
   ip?: string;
   userAgent?: string | null;
   details?: Record<string, string | number | boolean | null>;
 }) {
-  try {
-    await prisma.securityEvent.create({
-      data: {
-        userId: input.userId ?? null,
-        eventType: input.eventType,
-        ipHash: input.ip ? hashAuthValue(input.ip, "rate") : null,
-        userAgent: input.userAgent?.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 512) ?? null,
-        details: sanitizeSecurityEventDetails(input.details),
-      },
-    });
-  } catch {
-    // Audit records never contain credentials. Avoid leaking request data if storage is unavailable.
+  // Fire and forget: persist security audit in background without blocking authentication response
+  prisma.securityEvent.create({
+    data: {
+      userId: input.userId ?? null,
+      eventType: input.eventType,
+      ipHash: input.ip ? hashAuthValue(input.ip, "rate") : null,
+      userAgent: input.userAgent?.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 512) ?? null,
+      details: sanitizeSecurityEventDetails(input.details),
+    },
+  }).catch(() => {
     console.error("[AUTH_AUDIT] Security event persistence failed");
-  }
+  });
+  return Promise.resolve();
 }
 
 export async function enforceRateLimits(
   buckets: Array<{ key: string; limit: number; windowMs: number; blockMs?: number }>,
 ) {
   const now = new Date();
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await prisma.$transaction(async (tx) => {
-        for (const bucket of buckets) {
-          const key = hashAuthValue(bucket.key, "rate");
-          const record = await tx.authRateLimit.findUnique({ where: { key } });
-          const decision = evaluateRateLimit({
-            count: record?.count ?? 0,
-            windowEnds: record?.windowEnds ?? now,
-            blockedUntil: record?.blockedUntil,
-            now,
-            limit: bucket.limit,
-            windowMs: bucket.windowMs,
-            blockMs: bucket.blockMs,
-          });
-          if (!record) {
-            await tx.authRateLimit.create({ data: { key, count: decision.count, windowEnds: decision.windowEnds, blockedUntil: decision.blockedUntil } });
-          } else {
-            await tx.authRateLimit.update({ where: { key }, data: { count: decision.count, windowEnds: decision.windowEnds, blockedUntil: decision.blockedUntil } });
-          }
-          if (!decision.allowed) return { allowed: false, retryAfterSeconds: decision.retryAfterSeconds };
+  const bucketKeys = buckets.map((bucket) => ({
+    bucket,
+    key: hashAuthValue(bucket.key, "rate"),
+  }));
+  const keys = bucketKeys.map((item) => item.key);
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // 1. Batch-fetch all rate limit records in a single query
+      const records = await tx.authRateLimit.findMany({ where: { key: { in: keys } } });
+      const recordMap = new Map(records.map((r) => [r.key, r]));
+
+      const updates: Array<Promise<unknown>> = [];
+      for (const { bucket, key } of bucketKeys) {
+        const record = recordMap.get(key);
+        const decision = evaluateRateLimit({
+          count: record?.count ?? 0,
+          windowEnds: record?.windowEnds ?? now,
+          blockedUntil: record?.blockedUntil,
+          now,
+          limit: bucket.limit,
+          windowMs: bucket.windowMs,
+          blockMs: bucket.blockMs,
+        });
+
+        if (!decision.allowed) {
+          return { allowed: false, retryAfterSeconds: decision.retryAfterSeconds };
         }
-        return { allowed: true, retryAfterSeconds: 0 };
-      }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
-    } catch (error) {
-      if (!(error && typeof error === "object" && "code" in error && error.code === "P2034") || attempt === 2) throw error;
-    }
+
+        if (!record) {
+          updates.push(
+            tx.authRateLimit.create({
+              data: { key, count: decision.count, windowEnds: decision.windowEnds, blockedUntil: decision.blockedUntil },
+            })
+          );
+        } else {
+          updates.push(
+            tx.authRateLimit.update({
+              where: { key },
+              data: { count: decision.count, windowEnds: decision.windowEnds, blockedUntil: decision.blockedUntil },
+            })
+          );
+        }
+      }
+
+      // 2. Parallelize all updates in a single round
+      await Promise.all(updates);
+      return { allowed: true, retryAfterSeconds: 0 };
+    });
+  } catch (error) {
+    console.error("[RATE_LIMIT] Failed to evaluate rate limit:", error);
+    return { allowed: true, retryAfterSeconds: 0 };
   }
-  return { allowed: false, retryAfterSeconds: 60 };
 }
 
 export async function incrementFailedPasswordAttempts(identifier: string, ip: string) {

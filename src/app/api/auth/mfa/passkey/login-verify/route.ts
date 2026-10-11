@@ -20,14 +20,17 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null) as { response?: AuthenticationResponseJSON } | null;
     if (!body?.response?.id || body.response.id.length > 4096) return Response.json({ error: "Invalid passkey response" }, { status: 400 });
     const challengeKey = hashAuthValue(preAuth.preAuth.tokenHash, "passkey-auth");
-    const trustedDevice = await getTrustedDeviceCredential(preAuth.user.id);
+    const [trustedDevice, challenge, credential] = await Promise.all([
+      getTrustedDeviceCredential(preAuth.user.id),
+      prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash: challengeKey, type: "PASSKEY_AUTHENTICATION" } } }),
+      prisma.webAuthnCredential.findUnique({ where: { credentialId: body.response.id } }),
+    ]);
+
     if (!trustedDevice) return Response.json({ error: "This device is not trusted. Use the OTP flow instead." }, { status: 403 });
-    const challenge = await prisma.authChallenge.findUnique({ where: { identifierHash_type: { identifierHash: challengeKey, type: "PASSKEY_AUTHENTICATION" } } });
     const now = new Date();
     if (!isPasskeyChallengeUsable(challenge, preAuth.user.id, now) || challenge?.purpose !== trustedDevice.credentialId) return Response.json({ error: "Passkey request expired" }, { status: 400 });
     if (!challenge?.challenge) return Response.json({ error: "Passkey request expired" }, { status: 400 });
     const activeChallenge = challenge.challenge;
-    const credential = await prisma.webAuthnCredential.findUnique({ where: { credentialId: body.response.id } });
     if (!credential || !isCredentialTrustedForUser({
       userId: preAuth.user.id,
       credentialId: body.response.id,
@@ -64,7 +67,7 @@ export async function POST(request: Request) {
       const preAuthConsumed = await tx.loginPreAuth.updateMany({ where: { id: preAuth.preAuth.id, consumedAt: null, expiresAt: { gt: now }, passkeyOnly: true }, data: { consumedAt: now } });
       if (preAuthConsumed.count !== 1) throw new Error("Pre-authentication already consumed");
       await tx.loginTicket.create({ data: { userId: preAuth.user.id, preauthId: preAuth.preAuth.id, tokenHash: createHash("sha256").update(ticket).digest("hex"), expiresAt: new Date(now.getTime() + 2 * 60_000) } });
-    }, { isolationLevel: "Serializable", maxWait: 3_000, timeout: 5_000 });
+    }, { maxWait: 3_000, timeout: 5_000 });
     await writeSecurityEvent({ userId: preAuth.user.id, eventType: "PASSKEY_LOGIN_SUCCESS", ip, userAgent: request.headers.get("user-agent"), details: { credentialDeviceType: verification.authenticationInfo.credentialDeviceType, backedUp: verification.authenticationInfo.credentialBackedUp } });
     return Response.json({ success: true, loginTicket: ticket, expiresInSeconds: 120 });
   } catch {
