@@ -55,8 +55,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(prisma),
   useSecureCookies: process.env.NODE_ENV === "production",
-  session: { strategy: "jwt", maxAge: 8 * 60 * 60, updateAge: 60 * 60 },
-  jwt: { maxAge: 8 * 60 * 60 },
+  session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
+  jwt: { maxAge: 7 * 24 * 60 * 60 },
 
   providers: [
     Credentials({
@@ -118,8 +118,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             }
             const consumed = await tx.loginTicket.updateMany({ where: { id: ticket.id, tokenHash, expiresAt: { gt: handoffAt }, consumedAt: null }, data: { consumedAt: handoffAt } });
             if (consumed.count !== 1) return null;
-            const mobileLockEnabled = user.role === "ORG_USER" && /android|iphone|ipod|ipad|mobile/i.test((await headers()).get("user-agent") ?? "");
-            return tx.authSession.create({ data: { userId: user.id, expiresAt: new Date(handoffAt.getTime() + 8 * 60 * 60 * 1000), mobileLockEnabled } });
+            const mobileLockEnabled = false;
+            return tx.authSession.create({ data: { userId: user.id, expiresAt: new Date(handoffAt.getTime() + 7 * 24 * 60 * 60 * 1000), mobileLockEnabled } });
           }, { maxWait: 5_000, timeout: 10_000 });
           if (!authSession) return null;
           await writeSecurityEvent({ userId: user.id, eventType: "LOGIN_SUCCESS", details: { method: "mfa" } });
@@ -167,7 +167,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (mfaEnabled) return null;
         if (env.AUTH_MFA_CONFIGURED === "true") return null;
-        const authSession = await prisma.authSession.create({ data: { userId: user.id, expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000) } });
+        const authSession = await prisma.authSession.create({ data: { userId: user.id, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), mobileLockEnabled: false } });
         await writeSecurityEvent({ userId: user.id, eventType: "LOGIN_SUCCESS", ip, userAgent: requestHeaders.get("user-agent"), details: { method: "password_only_rollout_disabled" } });
 
         return {

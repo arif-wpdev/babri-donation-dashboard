@@ -5,9 +5,6 @@ import { BottomNav } from "@/components/layout/bottom-nav";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { requireStrongSession } from "@/lib/auth-security";
-import { MobileAppLock } from "@/components/pwa/mobile-app-lock";
-import { enableMobileLockForExistingSession } from "@/lib/mobile-app-lock";
-import { MobileAppSessionLockedError } from "@/lib/auth-security";
 import { prisma } from "@/lib/prisma";
 
 export default async function DashboardLayout({
@@ -18,15 +15,8 @@ export default async function DashboardLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
   try {
-    if (session.user.authSessionId) {
-      await enableMobileLockForExistingSession({ userId: session.user.id, sessionId: session.user.authSessionId, role: session.user.role });
-    }
     await requireStrongSession(session.user);
-  } catch (error) {
-    if (error instanceof MobileAppSessionLockedError) {
-      // Do not render protected server component content behind the lock screen.
-      return <MobileAppLock initialLocked />;
-    }
+  } catch {
     redirect("/login");
   }
 
@@ -38,7 +28,6 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider>
-      <MobileAppLock />
       <AppSidebar userRole={session.user.role} />
       <SidebarInset className="bg-background overflow-hidden flex flex-col h-screen">
         <Header user={headerUser} />

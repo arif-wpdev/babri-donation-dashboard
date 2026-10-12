@@ -24,14 +24,14 @@ export function isActiveSessionRecord(
   return Boolean(session && session.userId === userId && session.revokedAt === null && session.expiresAt > now);
 }
 
-export const MOBILE_APP_LOCK_IDLE_MS = 5 * 60_000;
+export const MOBILE_APP_LOCK_IDLE_MS = 0;
 
 export function isMobileAppSessionIdle(lastUsedAt: Date, now: Date, idleTimeoutMs = MOBILE_APP_LOCK_IDLE_MS) {
-  return now.getTime() - lastUsedAt.getTime() >= idleTimeoutMs;
+  return false;
 }
 
 export function isMobileAppSessionLocked(input: { role: string; lockEnabled: boolean; lastUsedAt: Date; now: Date }) {
-  return input.role === "ORG_USER" && input.lockEnabled && isMobileAppSessionIdle(input.lastUsedAt, input.now);
+  return false;
 }
 
 export function mobileAppLockTimestamp(now: Date, idleTimeoutMs = MOBILE_APP_LOCK_IDLE_MS) {

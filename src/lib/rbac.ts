@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import type { Role } from "@prisma/client";
-import { MobileAppSessionLockedError, MobileAppSessionUnlockRequiredError, requireStrongSession } from "@/lib/auth-security";
+import { requireStrongSession } from "@/lib/auth-security";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/env";
 import { canAccessAdminArea, isStrongAuthSession } from "@/lib/auth-session-policy";
@@ -21,8 +21,7 @@ export async function requireAuth() {
   if (session.user.authSessionId) {
     try {
       return await requireStrongSession(session.user);
-    } catch (error) {
-      if (error instanceof MobileAppSessionLockedError || error instanceof MobileAppSessionUnlockRequiredError) throw new ApiError("Mobile app locked. Unlock to continue.", 423);
+    } catch {
       throw new ApiError("Unauthorized", 401);
     }
   }

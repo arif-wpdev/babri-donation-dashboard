@@ -534,18 +534,10 @@ export async function requireStrongSession(user: StrongSessionUser) {
   if (!account || !canAuthenticateAccount({ role: account.role, disabledAt: account.disabledAt, organizationActive: !account.org?.deletedAt })) throw new Error("Unauthorized");
   if (account.role !== user.role || account.orgId !== user.orgId) throw new Error("Unauthorized");
   const now = new Date();
-  if (isMobileAppSessionLocked({ role: account.role, lockEnabled: record.mobileLockEnabled, lastUsedAt: record.lastUsedAt, now })) throw new MobileAppSessionLockedError();
-  if (!record.mobileLockEnabled) {
-    const touch = await prisma.authSession.updateMany({ where: { id: user.authSessionId, userId: user.id, revokedAt: null, expiresAt: { gt: now }, mobileLockEnabled: false, lastUsedAt: record.lastUsedAt }, data: { lastUsedAt: now } });
-    if (touch.count !== 1) {
-      const latest = await prisma.authSession.findUnique({ where: { id: user.authSessionId }, select: { userId: true, expiresAt: true, revokedAt: true, lastUsedAt: true, mobileLockEnabled: true } });
-      if (!latest || !isActiveSessionRecord(latest, user.id, new Date())) throw new Error("Unauthorized");
-      if (isMobileAppSessionLocked({ role: account.role, lockEnabled: latest.mobileLockEnabled, lastUsedAt: latest.lastUsedAt, now: new Date() })) throw new MobileAppSessionLockedError();
-      // Another request may have refreshed the same active session concurrently.
-      // Treat that as a successful touch rather than a transient 401 redirect loop.
-      if (latest.mobileLockEnabled) throw new MobileAppSessionUnlockRequiredError();
-    }
-  }
+  await prisma.authSession.updateMany({
+    where: { id: user.authSessionId, userId: user.id, revokedAt: null, expiresAt: { gt: now } },
+    data: { lastUsedAt: now },
+  });
   return { ...user, name: account.name, email: account.email, role: account.role, orgId: account.orgId, orgSlug: account.org?.slug ?? null };
 }
 

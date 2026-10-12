@@ -1,28 +1,21 @@
 import { redirect } from "next/navigation";
 import { ApiError, requireAdminAreaAccess } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { MobileAppSessionLockedError, MobileAppSessionUnlockRequiredError } from "@/lib/auth-security";
 import { AdminNavigation } from "@/components/admin/admin-navigation";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
 import { BottomNav } from "@/components/layout/bottom-nav";
-import { MobileAppLock } from "@/components/pwa/mobile-app-lock";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   let user;
   try {
     user = await requireAdminAreaAccess();
   } catch (error) {
-    if (error instanceof MobileAppSessionLockedError || error instanceof MobileAppSessionUnlockRequiredError || (error instanceof ApiError && error.statusCode === 423)) {
-      return <MobileAppLock initialLocked />;
-    }
     if (error instanceof ApiError && error.statusCode === 403) redirect("/dashboard");
     if (error instanceof ApiError && error.statusCode === 401) {
       redirect("/login?callbackUrl=%2Fadmin");
     }
-    // Do not redirect to /login for server or transient session errors: Proxy
-    // may still see an optimistic valid JWT and redirect login back here.
     redirect("/dashboard");
   }
 
@@ -42,7 +35,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <SidebarProvider>
-      <MobileAppLock />
       <AppSidebar userRole={user.role} />
       <SidebarInset className="bg-background overflow-hidden flex flex-col h-screen">
         <Header user={headerUser} />
