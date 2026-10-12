@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { cache } from "react";
 import { env } from "@/env";
 import { prisma } from "@/lib/prisma";
 import { sendGreenwebOtp } from "@/lib/greenweb-sms";
@@ -510,6 +511,7 @@ export type StrongSessionUser = {
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  phone?: string | null;
   role: Role;
   orgId: string | null;
   orgSlug: string | null;
@@ -517,28 +519,84 @@ export type StrongSessionUser = {
   mfaVerifiedAt: number | null;
 };
 
+const cachedValidateSession = cache(async (
+  userId: string,
+  authSessionId: string | null,
+  role: Role,
+  orgId: string | null,
+  mfaVerifiedAt: number | null,
+) => {
+  if (!authSessionId) {
+    if (env.AUTH_MFA_ENABLED === "true") throw new Error("Unauthorized");
+    const legacyUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, phone: true, phoneVerifiedAt: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } },
+    });
+    if (!legacyUser || !canAuthenticateAccount({ role: legacyUser.role, disabledAt: legacyUser.disabledAt, organizationActive: !legacyUser.org?.deletedAt })) throw new Error("Unauthorized");
+    return {
+      name: legacyUser.name,
+      email: legacyUser.email,
+      phone: legacyUser.phoneVerifiedAt ? legacyUser.phone : null,
+      role: legacyUser.role,
+      orgId: legacyUser.orgId,
+      orgSlug: legacyUser.org?.slug ?? null,
+    };
+  }
+
+  if (env.AUTH_MFA_ENABLED === "true" && !mfaVerifiedAt) throw new Error("Unauthorized");
+
+  const [record, account] = await Promise.all([
+    prisma.authSession.findUnique({
+      where: { id: authSessionId },
+      select: { userId: true, expiresAt: true, revokedAt: true, lastUsedAt: true, mobileLockEnabled: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, phone: true, phoneVerifiedAt: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } },
+    }),
+  ]);
+
+  if (!record || !isActiveSessionRecord(record, userId, new Date())) throw new Error("Unauthorized");
+  if (!account || !canAuthenticateAccount({ role: account.role, disabledAt: account.disabledAt, organizationActive: !account.org?.deletedAt })) throw new Error("Unauthorized");
+  if (account.role !== role || account.orgId !== orgId) throw new Error("Unauthorized");
+
+  const now = new Date();
+  // Throttle session lastUsedAt updates: only write to DB if lastUsedAt was more than 5 minutes ago!
+  if (!record.lastUsedAt || (now.getTime() - record.lastUsedAt.getTime()) > 5 * 60 * 1000) {
+    await prisma.authSession.updateMany({
+      where: { id: authSessionId, userId, revokedAt: null, expiresAt: { gt: now } },
+      data: { lastUsedAt: now },
+    });
+  }
+
+  return {
+    name: account.name,
+    email: account.email,
+    phone: account.phoneVerifiedAt ? account.phone : null,
+    role: account.role,
+    orgId: account.orgId,
+    orgSlug: account.org?.slug ?? null,
+  };
+});
+
 export async function requireStrongSession(user: StrongSessionUser) {
   if (!user) throw new Error("Unauthorized");
-  if (!user.authSessionId) {
-    if (env.AUTH_MFA_ENABLED === "true") throw new Error("Unauthorized");
-    const legacyUser = await prisma.user.findUnique({ where: { id: user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } } });
-    if (!legacyUser || !canAuthenticateAccount({ role: legacyUser.role, disabledAt: legacyUser.disabledAt, organizationActive: !legacyUser.org?.deletedAt })) throw new Error("Unauthorized");
-    return { ...user, name: legacyUser.name, email: legacyUser.email, role: legacyUser.role, orgId: legacyUser.orgId, orgSlug: legacyUser.org?.slug ?? null };
-  }
-  if (env.AUTH_MFA_ENABLED === "true" && !user.mfaVerifiedAt) throw new Error("Unauthorized");
-  const [record, account] = await Promise.all([
-    prisma.authSession.findUnique({ where: { id: user.authSessionId }, select: { userId: true, expiresAt: true, revokedAt: true, lastUsedAt: true, mobileLockEnabled: true } }),
-    prisma.user.findUnique({ where: { id: user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } } }),
-  ]);
-  if (!record || !isActiveSessionRecord(record, user.id, new Date())) throw new Error("Unauthorized");
-  if (!account || !canAuthenticateAccount({ role: account.role, disabledAt: account.disabledAt, organizationActive: !account.org?.deletedAt })) throw new Error("Unauthorized");
-  if (account.role !== user.role || account.orgId !== user.orgId) throw new Error("Unauthorized");
-  const now = new Date();
-  await prisma.authSession.updateMany({
-    where: { id: user.authSessionId, userId: user.id, revokedAt: null, expiresAt: { gt: now } },
-    data: { lastUsedAt: now },
-  });
-  return { ...user, name: account.name, email: account.email, role: account.role, orgId: account.orgId, orgSlug: account.org?.slug ?? null };
+  const validated = await cachedValidateSession(
+    user.id,
+    user.authSessionId ?? null,
+    user.role,
+    user.orgId ?? null,
+    user.mfaVerifiedAt ?? null,
+  );
+  return {
+    ...user,
+    name: validated.name,
+    email: validated.email,
+    phone: validated.phone,
+    role: validated.role,
+    orgId: validated.orgId,
+    orgSlug: validated.orgSlug,
+  };
 }
 
 

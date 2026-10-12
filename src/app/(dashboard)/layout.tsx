@@ -14,17 +14,17 @@ export default async function DashboardLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  let strongUser;
   try {
-    await requireStrongSession(session.user);
+    strongUser = await requireStrongSession(session.user);
   } catch {
     redirect("/login");
   }
 
-  let headerUser: typeof session.user & { phone?: string | null } = session.user;
-  if (session.user.role === "ORG_ADMIN") {
-    const account = await prisma.user.findUnique({ where: { id: session.user.id }, select: { phone: true, phoneVerifiedAt: true } });
-    headerUser = { ...session.user, phone: account?.phoneVerifiedAt ? account.phone : null };
-  }
+  const headerUser: typeof session.user & { phone?: string | null } = {
+    ...session.user,
+    phone: session.user.role === "ORG_ADMIN" ? strongUser.phone ?? null : null,
+  };
 
   return (
     <SidebarProvider>

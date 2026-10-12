@@ -85,14 +85,14 @@ export async function GET(request: NextRequest) {
     endOfToday.setHours(23, 59, 59, 999);
     
     const startOfThisMonth = startOfMonth(new Date());
-    const [donorsInRange, repeatDonorsCount, todayAggr, thisMonthAggr, trendDonations, fundGroups, donationsForFunds] = await Promise.all([
+    const [donorsInRange, repeatDonorsCount, todayAggr, thisMonthAggr, trendDonations, fundGroups, fundDonorPairs] = await Promise.all([
       prisma.donor.count({ where: { orgId, donations: { some: { status: "COMPLETED", ...rangeWhere } } } }),
       prisma.donor.count({ where: { orgId, ordersCount: { gt: 1 }, donations: { some: { status: "COMPLETED", ...rangeWhere } } } }),
       prisma.donation.aggregate({ where: { orgId, status: "COMPLETED", wcDatePaid: { gte: startOfToday, lte: endOfToday } }, _sum: { total: true } }),
       prisma.donation.aggregate({ where: { orgId, status: "COMPLETED", wcDatePaid: { gte: startOfThisMonth } }, _sum: { total: true } }),
       prisma.donation.findMany({ where: { orgId, status: "COMPLETED", ...rangeWhere }, select: { total: true, wcDatePaid: true }, orderBy: { wcDatePaid: "asc" } }),
       prisma.donation.groupBy({ by: ["fundId"], where: { orgId, status: "COMPLETED", ...rangeWhere }, _sum: { total: true } }),
-      prisma.donation.findMany({ where: { orgId, status: "COMPLETED", ...rangeWhere }, select: { fundId: true, donorId: true, fund: { select: { name: true } } } }),
+      prisma.donation.groupBy({ by: ["fundId", "donorId"], where: { orgId, status: "COMPLETED", ...rangeWhere, fundId: { not: null }, donorId: { not: null } } }),
     ]);
     const totalDonors = donorsInRange;
     const todayRaised = Number(todayAggr._sum.total || 0);
@@ -155,24 +155,27 @@ export async function GET(request: NextRequest) {
     // 3. Fund Breakdown (in range)
     // We group donations by fundId in the selected range
     const fundMap = new Map<string, { name: string, amount: number, uniqueDonors: Set<string> }>();
+    const fundIds = fundGroups.map((g) => g.fundId).filter(Boolean) as string[];
+    const funds = fundIds.length
+      ? await prisma.fund.findMany({ where: { id: { in: fundIds } }, select: { id: true, name: true } })
+      : [];
+    const fundNameMap = new Map(funds.map((f) => [f.id, f.name]));
     
-    // Initialize map with grouped sums
+    // Initialize map with grouped sums and targeted names
     for (const group of fundGroups) {
       if (group.fundId) {
         fundMap.set(group.fundId, { 
-          name: "Unknown Fund", 
+          name: fundNameMap.get(group.fundId) || "Unknown Fund", 
           amount: Number(group._sum.total || 0), 
-          uniqueDonors: new Set() 
+          uniqueDonors: new Set(),
         });
       }
     }
 
-    // Populate names and unique donors
-    for (const d of donationsForFunds) {
-      if (d.fundId && fundMap.has(d.fundId)) {
-        const entry = fundMap.get(d.fundId)!;
-        entry.name = d.fund?.name || "Unknown Fund";
-        if (d.donorId) entry.uniqueDonors.add(d.donorId);
+    // Populate unique donors using SQL grouped pairs
+    for (const pair of fundDonorPairs) {
+      if (pair.fundId && pair.donorId && fundMap.has(pair.fundId)) {
+        fundMap.get(pair.fundId)!.uniqueDonors.add(pair.donorId);
       }
     }
 

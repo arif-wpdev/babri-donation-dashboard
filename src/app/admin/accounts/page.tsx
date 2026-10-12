@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ApiError, requireAdminAreaAccess } from "@/lib/rbac";
+import { ApiError, getActiveOrganization, requireAdminAreaAccess } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { isMfaConfigurationReady } from "@/lib/auth-security";
 import { canManageAdminOrganization, canViewAdminAccounts, getAdminAccountStatusDetails, getRecoveryReadiness } from "@/lib/auth-session-policy";
@@ -14,7 +14,7 @@ export default async function AdminAccountsPage() {
     redirect("/dashboard");
   }
   if (user.role === "ORG_ADMIN") {
-    const activeOrganization = user.orgId ? await prisma.organization.findFirst({ where: { id: user.orgId, deletedAt: null }, select: { id: true } }) : null;
+    const activeOrganization = user.orgId ? await getActiveOrganization(user.orgId) : null;
     if (!activeOrganization) redirect("/dashboard");
   }
 

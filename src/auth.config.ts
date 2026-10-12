@@ -3,6 +3,14 @@ import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canAuthenticateAccount, hasMatchingAuthAccountClaims } from "@/lib/auth-session-policy";
 
+type CachedAuthValidation = {
+  valid: boolean;
+  orgSlug: string | null;
+  expiresAt: number;
+};
+
+const tokenValidationCache = new Map<string, CachedAuthValidation>();
+
 export const authConfig = {
   providers: [],
   pages: {
@@ -29,14 +37,38 @@ export const authConfig = {
         token.orgSlug = account.org?.slug ?? null;
         token.passwordChangedAt = account?.passwordChangedAt.getTime() ?? 0;
       } else if (token.id) {
+        const cacheKey = `${token.id}:${token.authSessionId ?? ""}:${token.passwordChangedAt ?? 0}`;
+        const cached = tokenValidationCache.get(cacheKey);
+        const now = Date.now();
+        if (cached && cached.expiresAt > now) {
+          if (!cached.valid) return null;
+          token.orgSlug = cached.orgSlug;
+          return token;
+        }
+
         const [account, authSession] = await Promise.all([
           prisma.user.findUnique({ where: { id: token.id as string }, select: { passwordChangedAt: true, disabledAt: true, role: true, orgId: true, org: { select: { slug: true, deletedAt: true } } } }),
           token.authSessionId ? prisma.authSession.findUnique({ where: { id: token.authSessionId as string }, select: { userId: true, expiresAt: true, revokedAt: true } }) : Promise.resolve(null),
         ]);
-        if (!account || !canAuthenticateAccount({ role: account.role, disabledAt: account.disabledAt, organizationActive: !account.org?.deletedAt }) || !hasMatchingAuthAccountClaims({ tokenRole: token.role as string | undefined, tokenOrgId: token.orgId as string | null | undefined, accountRole: account.role, accountOrgId: account.orgId }) || account.passwordChangedAt.getTime() !== token.passwordChangedAt) return null;
-        token.orgSlug = account.org?.slug ?? null;
-        if (token.authSessionId && (!authSession || authSession.userId !== token.id || authSession.revokedAt || authSession.expiresAt <= new Date())) return null;
-        if (!token.authSessionId && process.env.AUTH_MFA_ENABLED === "true") return null;
+
+        const isValid = Boolean(
+          account &&
+          canAuthenticateAccount({ role: account.role, disabledAt: account.disabledAt, organizationActive: !account.org?.deletedAt }) &&
+          hasMatchingAuthAccountClaims({ tokenRole: token.role as string | undefined, tokenOrgId: token.orgId as string | null | undefined, accountRole: account.role, accountOrgId: account.orgId }) &&
+          account.passwordChangedAt.getTime() === token.passwordChangedAt &&
+          (!token.authSessionId || (authSession && authSession.userId === token.id && !authSession.revokedAt && authSession.expiresAt > new Date())) &&
+          (token.authSessionId || process.env.AUTH_MFA_ENABLED !== "true")
+        );
+
+        if (tokenValidationCache.size > 2000) tokenValidationCache.clear();
+        tokenValidationCache.set(cacheKey, {
+          valid: isValid,
+          orgSlug: account?.org?.slug ?? null,
+          expiresAt: now + (isValid ? 60_000 : 5_000),
+        });
+
+        if (!isValid) return null;
+        token.orgSlug = account?.org?.slug ?? null;
       }
       return token;
     },

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { auth } from "@/lib/auth";
 import type { Role } from "@prisma/client";
 import { requireStrongSession } from "@/lib/auth-security";
@@ -11,9 +12,10 @@ import { canAccessAdminArea, isStrongAuthSession } from "@/lib/auth-session-poli
 
 /**
  * Returns the current session or throws a 401 response.
- * Use in Route Handlers as a defense-in-depth check (middleware is primary).
+ * Memoized per server request via React.cache so multiple layout/page calls
+ * don't trigger repeated database roundtrips.
  */
-export async function requireAuth() {
+export const requireAuth = cache(async () => {
   const session = await auth();
   if (!session?.user || !isStrongAuthSession(session.user, env.AUTH_MFA_ENABLED === "true")) {
     throw new ApiError("Unauthorized", 401);
@@ -26,48 +28,52 @@ export async function requireAuth() {
     }
   }
   if (env.AUTH_MFA_ENABLED === "true") throw new ApiError("Unauthorized", 401);
-  const legacyUser = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, email: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } } });
+  const legacyUser = await prisma.user.findUnique({ where: { id: session.user.id }, select: { id: true, name: true, email: true, phone: true, phoneVerifiedAt: true, role: true, orgId: true, disabledAt: true, org: { select: { slug: true, deletedAt: true } } } });
   if (!legacyUser || legacyUser.disabledAt || legacyUser.org?.deletedAt) throw new ApiError("Unauthorized", 401);
-  return { ...session.user, name: legacyUser.name, email: legacyUser.email, role: legacyUser.role, orgId: legacyUser.orgId, orgSlug: legacyUser.org?.slug ?? null };
-}
+  return { ...session.user, name: legacyUser.name, email: legacyUser.email, phone: legacyUser.phoneVerifiedAt ? legacyUser.phone : null, role: legacyUser.role, orgId: legacyUser.orgId, orgSlug: legacyUser.org?.slug ?? null };
+});
 
 /**
  * Returns the current session only if the user has one of the allowed roles.
  * Throws 403 otherwise.
  */
-export async function requireRole(...roles: Role[]) {
+export const requireRole = cache(async (...roles: Role[]) => {
   const user = await requireAuth();
   if (!roles.includes(user.role)) {
     throw new ApiError("Forbidden", 403);
   }
   return user;
-}
+});
 
 /**
  * Returns the current session only if the user is a SUPER_ADMIN.
  */
-export async function requireSuperAdmin() {
+export const requireSuperAdmin = cache(async () => {
   return requireRole("SUPER_ADMIN");
-}
+});
 
 /** Returns the current authenticated user only if they can access `/admin`. */
-export async function requireAdminAreaAccess() {
+export const requireAdminAreaAccess = cache(async () => {
   const user = await requireAuth();
   if (!canAccessAdminArea(user.role)) throw new ApiError("Forbidden", 403);
   return user;
-}
+});
 
 /**
  * Returns the current session only if the user belongs to the specified org
  * OR is a SUPER_ADMIN (who can access any org).
  */
-export async function requireOrgAccess(orgId: string) {
+export const requireOrgAccess = cache(async (orgId: string) => {
   const user = await requireAuth();
   if (user.role !== "SUPER_ADMIN" && user.orgId !== orgId) {
     throw new ApiError("Forbidden", 403);
   }
   return user;
-}
+});
+
+export const getActiveOrganization = cache(async (orgId: string) => {
+  return prisma.organization.findFirst({ where: { id: orgId, deletedAt: null }, select: { id: true, name: true, slug: true } });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ApiError — Structured error for Route Handlers

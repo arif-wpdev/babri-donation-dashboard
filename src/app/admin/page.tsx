@@ -2,8 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Building2, ShieldCheck, Users } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ApiError, requireAdminAreaAccess } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
+import { ApiError, getActiveOrganization, requireAdminAreaAccess } from "@/lib/rbac";
 
 export default async function AdminHomePage() {
   let user;
@@ -14,7 +13,7 @@ export default async function AdminHomePage() {
     redirect("/dashboard");
   }
   if (user.role === "SUPER_ADMIN") redirect("/admin/organizations");
-  const activeOrganization = user.orgId ? await prisma.organization.findFirst({ where: { id: user.orgId, deletedAt: null }, select: { id: true } }) : null;
+  const activeOrganization = user.orgId ? await getActiveOrganization(user.orgId) : null;
   if (!activeOrganization) redirect("/dashboard");
 
   return (

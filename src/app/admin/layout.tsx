@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { ApiError, requireAdminAreaAccess } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
+import { ApiError, getActiveOrganization, requireAdminAreaAccess } from "@/lib/rbac";
 import { AdminNavigation } from "@/components/admin/admin-navigation";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
@@ -27,10 +26,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   };
 
   if (user.role === "ORG_ADMIN") {
-    const activeOrganization = user.orgId ? await prisma.organization.findFirst({ where: { id: user.orgId, deletedAt: null }, select: { id: true } }) : null;
+    const activeOrganization = user.orgId ? await getActiveOrganization(user.orgId) : null;
     if (!activeOrganization) redirect("/dashboard");
-    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { phone: true, phoneVerifiedAt: true } });
-    headerUser.phone = account?.phoneVerifiedAt ? account.phone : null;
+    headerUser.phone = user.phone ?? null;
   }
 
   return (

@@ -15,9 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import pdfMake from "pdfmake/build/pdfmake";
-import pdfMakeFonts from "pdfmake/build/vfs_fonts";
-import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { DateRange } from "react-day-picker";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
@@ -120,6 +117,7 @@ export default function DonorsDirectoryPage() {
       });
 
       if (exportFormat === "csv") {
+        const XLSX = await import("xlsx");
         const worksheet = XLSX.utils.json_to_sheet(exportData);
         const csv = XLSX.utils.sheet_to_csv(worksheet);
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -129,12 +127,17 @@ export default function DonorsDirectoryPage() {
         link.click();
       } 
       else if (exportFormat === "excel") {
+        const XLSX = await import("xlsx");
         const worksheet = XLSX.utils.json_to_sheet(exportData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Donors");
         XLSX.writeFile(workbook, `Donors_Export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
       }
       else if (exportFormat === "pdf") {
+        const [{ default: pdfMake }, { default: pdfMakeFonts }] = await Promise.all([
+          import("pdfmake/build/pdfmake"),
+          import("pdfmake/build/vfs_fonts"),
+        ]);
         // PDFMake/PDFKit embeds the TTF and uses fontkit's Bengali OpenType
         // shaping. Unlike the previous canvas approach, Bengali remains vector
         // text in the PDF and can be selected and searched.

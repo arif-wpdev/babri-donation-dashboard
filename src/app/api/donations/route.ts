@@ -116,11 +116,10 @@ export async function GET(request: NextRequest) {
         _sum: { total: true },
         _count: { id: true },
       }),
-      prisma.donation.findMany({
+      prisma.donation.groupBy({
+        by: ['donorId'],
         where: { ...where, donorId: { not: null } },
-        distinct: ['donorId'],
-        select: { donorId: true }
-      })
+      }),
     ]);
 
     return Response.json({
